@@ -1,0 +1,7 @@
+Running: xsim.dir/spsramsim_behav/xsimk.exe -simmode gui -wdb spsramsim_behav.wdb -simrunnum 0 -socket 59134
+Design successfully loaded
+Design Loading Memory Usage: 10020 KB (Peak: 10020 KB)
+Design Loading CPU Usage: 0 ms
+Simulation completed
+Simulation Memory Usage: 10728 KB (Peak: 10728 KB)
+Simulation CPU Usage: 62 ms
