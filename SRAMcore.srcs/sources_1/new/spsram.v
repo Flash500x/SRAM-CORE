@@ -20,20 +20,18 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module spsram #(parameter DATAWIDTH = 8,parameter ADDRESSWIDTH = 8,
+module spsram #(parameter DATA_WIDTH = 8,parameter ADDRESS_WIDTH = 8,
 parameter DEPTH = 256)(
 input clk,wre,oe,ce,
-input [ADDRESSWIDTH-1:0]addr,
-inout [DATAWIDTH-1:0]data
+input [ADDRESS_WIDTH-1:0]addr,
+inout [DATA_WIDTH-1:0]data // bidirectional data bus
     );
-    reg [DATAWIDTH-1:0] mem[0:DEPTH-1];
-    reg [DATAWIDTH-1:0] TEMPDATA;
+    reg [DATA_WIDTH-1:0] mem[0:DEPTH-1];
+    
     always @(posedge clk)
     begin
     if(wre && ce)
         mem[addr] <= data;
-    if(!wre && ce)
-        TEMPDATA <= mem[addr];
     end
-    assign data = !wre & ce & oe? TEMPDATA:'hz;
+    assign data = !wre & ce & oe? mem[addr]:'hz; 
 endmodule
