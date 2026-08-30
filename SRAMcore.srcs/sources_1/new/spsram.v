@@ -20,12 +20,13 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module spsram #(parameter DATA_WIDTH = 8,parameter ADDRESS_WIDTH = 8,
-parameter DEPTH = 256)(
+module spsram #(parameter DATA_WIDTH = 9,parameter ADDRESS_WIDTH = 8
+)(
 input clk,wre,oe,ce,
 input [ADDRESS_WIDTH-1:0]addr,
 inout [DATA_WIDTH-1:0]data // bidirectional data bus
     );
+    localparam DEPTH = 2**ADDRESS_WIDTH;
     reg [DATA_WIDTH-1:0] mem[0:DEPTH-1];
     
     always @(posedge clk)
