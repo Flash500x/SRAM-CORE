@@ -7,7 +7,7 @@ input [DATA_WIDTH-1:0]wdata,//data in
 inout [DATA_WIDTH:0]data,//sram bus,//data from contoller
 output reg [DATA_WIDTH-1:0]rdata,
 output [ADDRESS_WIDTH-1:0]ram_addr,//output from controller to sram module
-output  reg oe,ce,wre
+output  reg oe,ce,wre,error_flag
     );
     //--local parameters
     localparam MAXTRY = 3;// max tries allowed for read
@@ -34,15 +34,16 @@ output  reg oe,ce,wre
         addr_reg  <= 0;
         wdata_reg <= 0;
         rw_reg    <= 0;
+        error_flag <=0;
     end
     else begin
         state <= next_state;
-
+        
         // Accept one new request only in IDLE
         if (state == IDLE && req) begin
             try      <= 0;
             addr_reg <= addr;
-           
+           error_flag <=0;
             rw_reg   <= rw;
             rdata    <= 0;
             wdata_reg <=0;
@@ -58,7 +59,9 @@ output  reg oe,ce,wre
             end
             else if (try < MAXTRY) begin
                 try <= try + 1'b1;
-            end
+                end
+            else
+                error_flag <= 1'b1;
         end
     end
 end

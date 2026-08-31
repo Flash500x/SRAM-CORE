@@ -12,7 +12,7 @@ module rdwrfsmsim(
     wire [DATA_WIDTH-2:0]rdata;
     reg [DATA_WIDTH-2:0]wdata;//data to be written when tested.
     wire [DATA_WIDTH-2:0]ram_addr;
-    wire oe,ce,wre;    
+    wire oe,ce,wre,error_flag;    
     wr_rd_fsm #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH),
     .DATA_WIDTH(DATA_WIDTH-1)
@@ -28,7 +28,8 @@ module rdwrfsmsim(
     .data(data),
     .wdata(wdata),
     .rdata(rdata),
-    .ram_addr(ram_addr)
+    .ram_addr(ram_addr),
+    .error_flag(error_flag)
     );
     spsram #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH),
@@ -111,7 +112,7 @@ begin
     req = 0;
 
     // Give enough time for retries
-    #50;
+    #100;
 
     // =========================================================
     // TEST 5: RESTORE SRAM
