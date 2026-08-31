@@ -1,104 +1,103 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 28.08.2026 20:01:29
-// Design Name: 
-// Module Name: wr_rd_fsm
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
-
 
 module wr_rd_fsm #(parameter ADDRESS_WIDTH=8, parameter DATA_WIDTH=8)(
 input clk,rst,req,rw,
 input [ADDRESS_WIDTH-1:0]addr,
 input [DATA_WIDTH-1:0]wdata,//data in
-inout [DATA_WIDTH:0]data,//sram bus
-
+inout [DATA_WIDTH:0]data,//sram bus,//data from contoller
+output reg [DATA_WIDTH-1:0]rdata,
+output [ADDRESS_WIDTH-1:0]ram_addr,//output from controller to sram module
 output  reg oe,ce,wre
     );
+    //--local parameters
     localparam MAXTRY = 3;// max tries allowed for read
+    localparam IDLE = 2'b00;
+    localparam READ = 2'b01;
+    localparam WRITE = 2'b10;
+    localparam READ_WAIT = 2'b11;
+    //--local parameters
+    
+    //--intern
+    reg [DATA_WIDTH-1:0] wdata_reg;
+    reg [ADDRESS_WIDTH-1:0] addr_reg;
     reg [1:0]try;//tries counter
-    reg [DATA_WIDTH-1:0]rdata;//hold read data
-    assign data = ce && wre?{^wdata,wdata}:{(DATA_WIDTH+1){1'hz}};
+    reg rw_reg;
+    assign data = ce && wre?{^wdata_reg,wdata_reg}:{(DATA_WIDTH+1){1'hz}};
+    assign ram_addr = addr_reg;
     reg [1:0]state,next_state;// state register
     //state register /memory
-    always @(posedge clk or negedge rst)
-        begin
-            if(!rst)
-            begin
-                state <= 2'b00;//reset to idle
-                rdata <= 0;
-                try <= 0;
-                end
-            else
-                begin
-                if(state == 2'b00 && req && !rw)// reset retries for new read
-                try <=0;
-                if(state == 2'b11)
-                    begin
-                       
-                            if(data[DATA_WIDTH] == ^data[DATA_WIDTH-1:0])
-                                begin
-                                rdata <= data[DATA_WIDTH-1:0];
-                                try <= 0;
-                                end
-                            else
-                            begin
-                                if(try < MAXTRY)
-                                try <=  try+1'b1;                               
-                                end
-                    end
-                state <= next_state;// move to next state if rst is high after read
-                end
+    always @(posedge clk or negedge rst) begin
+    if (!rst) begin
+        state     <= IDLE;
+        rdata     <= 0;
+        try       <= 0;
+        addr_reg  <= 0;
+        wdata_reg <= 0;
+        rw_reg    <= 0;
+    end
+    else begin
+        state <= next_state;
+
+        // Accept one new request only in IDLE
+        if (state == IDLE && req) begin
+            try      <= 0;
+            addr_reg <= addr;
+           
+            rw_reg   <= rw;
+            rdata    <= 0;
+            wdata_reg <=0;
+            if (rw)
+                wdata_reg <= wdata;
         end
+
+        // Check parity in READ-WAIT
+        if (state == READ_WAIT) begin
+            if (data[DATA_WIDTH] == ^data[DATA_WIDTH-1:0]) begin
+                rdata <= data[DATA_WIDTH-1:0];
+                try   <= 0;
+            end
+            else if (try < MAXTRY) begin
+                try <= try + 1'b1;
+            end
+        end
+    end
+end
     //next state logic
     always @(*)          
         begin
         case(state)
-            2'b00: 
+            IDLE: 
                 begin
                 if(req)
                 begin
                     if(!rw)
-                        next_state = 2'b01;
+                        next_state = READ;
                     else
-                        next_state = 2'b10;
+                        next_state = WRITE;
                 end
                 else 
-                next_state = 2'b00;
+                next_state = IDLE;
                 end
-            2'b01:
+            READ:
                 
-                        next_state = 2'b11;
+                        next_state = READ_WAIT;
                 
-            2'b10:
+            WRITE:
                 
-                        next_state = 2'b00;
-            2'b11: 
+                        next_state = IDLE;
+            READ_WAIT: 
                         begin
                              if(data[DATA_WIDTH] == ^data[DATA_WIDTH-1:0])
-                             next_state = 2'b00;
+                             next_state = IDLE;
                              else
                              begin
                                 if(try < MAXTRY)
-                                    next_state = 2'b01;
+                                    next_state = READ;
                                 else 
-                                    next_state = 2'b00;
+                                    next_state = IDLE;
                              end                       
                         end                           
-            default: next_state = 2'b00;
+            default: next_state = IDLE;
         endcase
         end
         
@@ -107,25 +106,25 @@ output  reg oe,ce,wre
     always @(*)
         begin
             case(state)
-            2'b00: //idle
+            IDLE: //idle
                 begin
                 ce = 1'b0;
                 oe = 1'b0;
                 wre = 1'b0;
                 end
-            2'b01://read
+            READ://read
                 begin
                 ce = 1'b1;
                 oe = 1'b1;
                 wre = 1'b0;
                 end
-            2'b10://write
+            WRITE://write
                 begin
                 ce = 1'b1;
                 oe = 1'b0;
                 wre = 1'b1;
                 end
-            2'b11://read-wait
+            READ_WAIT://read-wait
                 begin
                 ce = 1'b1;
                 oe = 1'b1;

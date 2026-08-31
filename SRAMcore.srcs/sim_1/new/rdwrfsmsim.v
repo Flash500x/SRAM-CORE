@@ -1,39 +1,21 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 28.08.2026 20:45:12
-// Design Name: 
-// Module Name: rdwrfsmsim
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
 
 
 module rdwrfsmsim(
 
     );
     parameter ADDRESS_WIDTH = 8;
-    parameter DATA_WIDTH = 8;
+    parameter DATA_WIDTH = 9;
     reg clk,req,rw,rst;
     reg [ADDRESS_WIDTH-1:0]addr;
     wire [DATA_WIDTH-1:0]data;
-    
-    reg [DATA_WIDTH-1:0]wdata;//data to be written when tested.
+    wire [DATA_WIDTH-2:0]rdata;
+    reg [DATA_WIDTH-2:0]wdata;//data to be written when tested.
+    wire [DATA_WIDTH-2:0]ram_addr;
     wire oe,ce,wre;    
     wr_rd_fsm #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH),
-    .DATA_WIDTH(DATA_WIDTH)
+    .DATA_WIDTH(DATA_WIDTH-1)
     )uut(
     .clk(clk),
     .rst(rst),
@@ -44,15 +26,16 @@ module rdwrfsmsim(
     .ce(ce),
     .addr(addr),
     .data(data),
-    .wdata(wdata)
-    
+    .wdata(wdata),
+    .rdata(rdata),
+    .ram_addr(ram_addr)
     );
     spsram #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH),
     .DATA_WIDTH(DATA_WIDTH)
     )uut1(
     .clk(clk),
-    .addr(addr),
+    .addr(ram_addr),
     .oe(oe),
     .ce(ce),
     .wre(wre),

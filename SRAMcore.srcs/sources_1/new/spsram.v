@@ -27,12 +27,20 @@ input [ADDRESS_WIDTH-1:0]addr,
 inout [DATA_WIDTH-1:0]data // bidirectional data bus
     );
     localparam DEPTH = 2**ADDRESS_WIDTH;
+    reg data_valid;
     reg [DATA_WIDTH-1:0] mem[0:DEPTH-1];
-    
+    reg [DATA_WIDTH-1:0] TEMPDATA;
     always @(posedge clk)
-    begin
-    if(wre && ce)
-        mem[addr] <= data;
+        begin
+            data_valid <= 1'b0;
+            if(wre && ce)
+                mem[addr] <= data;
+            else if(oe && !wre && ce)
+                begin
+                    TEMPDATA <= mem[addr];
+                    data_valid <= 1'b1;
+            end
     end
-    assign data = !wre & ce & oe? mem[addr]:'hz; 
+    assign data = (!wre && ce && oe&& data_valid)? TEMPDATA:{DATA_WIDTH{1'hz}}; 
+    
 endmodule

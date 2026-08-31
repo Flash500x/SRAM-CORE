@@ -5,15 +5,14 @@ Running: C:/Xilinx/Vivado/2023.1/bin/unwrapped/win64.o/xelab.exe --incr --debug 
 Using 2 slave threads.
 Starting static elaboration
 Pass Through NonSizing Optimizer
-WARNING: [VRFC 10-3091] actual bit length 8 differs from formal bit length 9 for port 'data' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:46]
-WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a force statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:113]
-WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a release statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:138]
+WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a force statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:96]
+WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a release statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:121]
 Completed static elaboration
 Starting simulation data flow analysis
 Completed simulation data flow analysis
 Time Resolution for simulation is 1ps
 Compiling module xil_defaultlib.wr_rd_fsm
-Compiling module xil_defaultlib.spsram(DATA_WIDTH=8)
+Compiling module xil_defaultlib.spsram_default
 Compiling module xil_defaultlib.rdwrfsmsim
 Compiling module xil_defaultlib.glbl
 Built simulation snapshot rdwrfsmsim_behav
