@@ -12,7 +12,7 @@ module rdwrfsmsim(
     wire [DATA_WIDTH-2:0]rdata;
     reg [DATA_WIDTH-2:0]wdata;//data to be written when tested.
     wire [DATA_WIDTH-2:0]ram_addr;
-    wire oe,ce,wre,error_flag;    
+    wire oe,ce,wre,error_flag,busy,done;    
     wr_rd_fsm #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH),
     .DATA_WIDTH(DATA_WIDTH-1)
@@ -29,7 +29,9 @@ module rdwrfsmsim(
     .wdata(wdata),
     .rdata(rdata),
     .ram_addr(ram_addr),
-    .error_flag(error_flag)
+    .error_flag(error_flag),
+    .busy(busy),
+    .done(done)
     );
     spsram #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH),

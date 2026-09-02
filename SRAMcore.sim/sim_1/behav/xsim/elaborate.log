@@ -5,8 +5,8 @@ Running: C:/Xilinx/Vivado/2023.1/bin/unwrapped/win64.o/xelab.exe --incr --debug 
 Using 2 slave threads.
 Starting static elaboration
 Pass Through NonSizing Optimizer
-WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a force statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:97]
-WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a release statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:122]
+WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a force statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:99]
+WARNING: [VRFC 10-3149] bit-select or part-select is not allowed in a release statement for non-net 'mem' [C:/Users/asus/Downloads/Verilog/SRAMcore/SRAMcore.srcs/sim_1/new/rdwrfsmsim.v:124]
 Completed static elaboration
 Starting simulation data flow analysis
 Completed simulation data flow analysis
