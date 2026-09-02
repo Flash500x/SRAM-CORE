@@ -1,14 +1,14 @@
 `timescale 1ns / 1ps
 
 module wr_rd_fsm #(parameter ADDRESS_WIDTH=8, parameter DATA_WIDTH=8)(
-input clk,rst,req,rw,
+input clk,rst,req,rw,burst_en,abort,write_done_ram,
 input [ADDRESS_WIDTH-1:0]addr,
 input [DATA_WIDTH-1:0]wdata,//data in
-
+input [7:0]burst_len,
 inout [DATA_WIDTH:0]data,//sram bus,//data from contoller
 output [DATA_WIDTH-1:0]rdata,
 output [ADDRESS_WIDTH-1:0]ram_addr,//output from controller to sram module
-output  reg oe,ce,wre,error_flag,done,
+output  reg oe,ce,wre,error_flag,done,burst_end,
 output busy
     );
     //--local parameters
@@ -17,27 +17,27 @@ output busy
     localparam READ = 3'b001;
     localparam WRITE = 3'b010;
     localparam READ_WAIT = 3'b011;
-    
+    localparam BURST_MODE = 3'b100;
     localparam INVALID_ADDR = 8'hff;
     //--local parameters
     
     //--internal registers
-    reg [DATA_WIDTH-1:0] wdata_reg;
-    reg [ADDRESS_WIDTH-1:0] addr_reg;
+    reg [DATA_WIDTH-1:0] wdata_reg;// current data register
+    reg [ADDRESS_WIDTH-1:0] addr_reg;//current address register
     reg [1:0]try;//tries counter
-    reg rdata_valid;
+    reg rdata_valid;//read data validity register
     reg [DATA_WIDTH-1:0]rdata_reg;
-    reg rw_reg;
+    reg rw_reg,burst_en_reg;
+    reg [2:0]burst_count;
     reg [2:0]state,next_state;// state register
-    
     //--internal registers
     
     //--continous assignments
     assign data = ce && wre?{^wdata_reg,wdata_reg}:{(DATA_WIDTH+1){1'hz}};
     assign ram_addr = addr_reg;
     assign busy = (state != IDLE)? 1'b1:1'b0;
-    //--continous assignments
     assign rdata = rdata_valid ? rdata_reg : {(DATA_WIDTH){1'hz}};
+    //--continous assignments
     
     //state register /memory
     always @(posedge clk or negedge rst) begin
@@ -51,7 +51,9 @@ output busy
         rw_reg    <= 0;
         error_flag <=0;
         done <=0;
-      
+        burst_count <= 0;
+        burst_en_reg <= 0;
+        burst_end <= 0;
     end
     else begin
         state <= next_state;
@@ -60,13 +62,14 @@ output busy
         if (state == IDLE && req) begin
             try      <= 0;
             addr_reg <= addr;
-           error_flag <=0;
+            error_flag <=0;
             rw_reg   <= rw;
             rdata_reg    <= 0;
             rdata_valid <= 0;
             wdata_reg <=0;
-          
-            
+            burst_count <= 0;
+            burst_en_reg <= 0;
+            burst_end <=0;
         if(addr == INVALID_ADDR)
         begin   
             error_flag <= 1'b1;
@@ -75,13 +78,17 @@ output busy
         
         if (rw)
                 wdata_reg <= wdata;
+        
+        if(burst_en)
+            begin
+                burst_en_reg <= burst_en;
+            end
         end
         
         
-        
         if(state == WRITE)
-            
-            done <= 1'b1;
+            if(write_done_ram)
+                done <= 1'b1;
            
         // Check parity in READ-WAIT
         if (state == READ_WAIT) begin
@@ -107,10 +114,15 @@ end
                 begin
                 if(req)
                 begin
-                    if(!rw)
-                        next_state = READ;
-                    else
+                    if(addr == INVALID_ADDR)
+                        next_state = IDLE;
+                    else if(burst_en)
+                        next_state = BURST_MODE;
+                    else if(rw)
                         next_state = WRITE;
+                    else
+                        next_state = READ;
+                    
                 end
                 else 
                 next_state = IDLE;
@@ -119,8 +131,12 @@ end
                 
                         next_state = READ_WAIT;
                 
-            WRITE: 
-                        next_state = IDLE;
+            WRITE:      
+                        begin
+                        if(burst_count < burst_len)
+                            next_state = IDLE;
+                        
+                        end
                       
             READ_WAIT: 
                         begin
@@ -134,7 +150,15 @@ end
                                     next_state = IDLE;
                              end                       
                         end 
-                                    
+             BURST_MODE:
+                         begin
+                            if(rw && burst_en_reg && burst_count < burst_len)//burst write
+                               next_state = WRITE;
+                            else if(!rw && burst_en_reg && burst_count < burst_len)
+                                next_state = READ;
+                            else
+                                next_state = IDLE;
+                         end                       
             default: next_state = IDLE;
         endcase
         end
@@ -170,9 +194,7 @@ end
                 oe = 1'b1;
                 wre = 1'b0;
                 end 
-           
-                       
- 
+
             default:
                 begin
                 ce = 1'b0;
