@@ -44,7 +44,7 @@ module rdwrfsmsim(
     .ce(ce),
     .wre(wre),
     .data(data),
-    .write_done_ram(write_done_ram)
+    .write_done(write_done_ram)
     );
     
     always #5 clk = ~clk;

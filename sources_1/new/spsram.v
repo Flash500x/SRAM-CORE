@@ -2,25 +2,30 @@
 
 module spsram #(parameter DATA_WIDTH = 9,parameter ADDRESS_WIDTH = 8
 )(
-input clk,wre,oe,ce,
-input [ADDRESS_WIDTH-1:0]addr,
-inout [DATA_WIDTH-1:0]data // bidirectional data bus
+input wire  clk,wre,oe,ce,
+input wire [ADDRESS_WIDTH-1:0]addr,
+inout wire [DATA_WIDTH-1:0]data, // bidirectional data bus
+output wire done
     );
     localparam DEPTH = 2**ADDRESS_WIDTH;
-    reg data_valid;
+    
     reg [DATA_WIDTH-1:0] mem[0:DEPTH-1];
     reg [DATA_WIDTH-1:0] TEMPDATA;
+    reg status;     
     always @(posedge clk)
         begin
-            data_valid <= 1'b0;
+            status <= 1'b0;
             if(wre && ce)
+            begin
                 mem[addr] <= data;
+                status <= 1'b1;
+            end
             else if(oe && !wre && ce)
                 begin
                     TEMPDATA <= mem[addr];
-                    data_valid <= 1'b1;
+                    status <= 1'b1; 
             end
     end
-    assign data = (!wre && ce && oe&& data_valid)? TEMPDATA:{DATA_WIDTH{1'hz}}; 
-    
+    assign data = (!wre && ce && oe&& done)? TEMPDATA:{DATA_WIDTH{1'hz}}; 
+    assign done = status ? 1'b1: 1'b0;
 endmodule
