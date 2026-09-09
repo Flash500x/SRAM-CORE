@@ -3,10 +3,11 @@
 module controller #(parameter DATA_WIDTH = 8, parameter ADDRESS_WIDTH = 8)(
 input wire req,rw,clk,rst,bmode,abort,ram_stat,
 input [3:0]burst_len,
-inout wire [DATA_WIDTH:0]data_cn_ram,
+inout wire [DATA_WIDTH-1:0]data_cn_ram,
 input wire [ADDRESS_WIDTH-1:0]addr,
-output wire wre,oe,ce,busy,tri_o,
+output reg wre,oe,ce,tri_o,
 output reg done,error_flag,
+output busy,
 inout wire [DATA_WIDTH-1:0]data_cn_in_out
     );
     //internal registers
@@ -31,9 +32,13 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
     
     //local parameters
     
+    //cont assignments
+    assign data_cn_ram = tri_o == 0? data_reg : {DATA_WIDTH{1'hz}};
+    assign busy = (state == IDLE || state == PRE_IDLE)? 1'b0:1'b1;
+    //cont assignments
     
     //state-register
-    always @(posedge clk)
+    always @(posedge clk or negedge rst)
         begin
             if(!rst)
                 begin
@@ -79,8 +84,6 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                                                 end   
                                         end
                                     end
-                           
-                    
                          end
                 end
         end
@@ -140,4 +143,54 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
             endcase
         end
     //next-state-logic
+    
+    //output logic
+        always @(*)
+                begin
+                    case(state)
+                        PRE_IDLE:
+                            begin
+                                ce = 1'b0;
+                                oe = 1'b0;
+                                wre = 1'b0;
+                                tri_o = 1'b1;
+                            end
+                        IDLE:
+                            begin
+                                ce = 1'b0;
+                                oe = 1'b0;
+                                wre = 1'b0;
+                                tri_o = 1'b1;
+                            end 
+                        PRE:
+                            begin
+                                ce = 1'b0;
+                                oe = 1'b0;
+                                wre = 1'b0;
+                                tri_o = 1'b1;
+                            end   
+                        WRITE:
+                            begin
+                                ce = 1'b1;
+                                oe = 1'b0;
+                                wre = 1'b1;
+                                tri_o = 1'b0;
+                            end
+                         READ:
+                            begin
+                                ce = 1'b1;
+                                oe = 1'b1;
+                                wre = 1'b0;
+                                tri_o = 1'b1;
+                            end
+                          BE:
+                            begin
+                                ce = 1'b0;
+                                oe = 1'b0;
+                                wre = 1'b0;
+                                tri_o = 1'b1;
+                            end
+                    endcase
+                end
+    //output logic
 endmodule
