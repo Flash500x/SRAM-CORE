@@ -1,0 +1,208 @@
+$date
+	Thu Sep 10 13:15:48 2026
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1ps
+$end
+$scope module controller_tb $end
+$var wire 8 ! data_cn_ram [7:0] $end
+$var wire 1 " wre $end
+$var wire 1 # tri_o $end
+$var wire 1 $ ram_stat $end
+$var wire 1 % oe $end
+$var wire 8 & data_cn_in_out [7:0] $end
+$var wire 1 ' ce $end
+$var wire 1 ( busy $end
+$var parameter 32 ) ADDRESS_WIDTH $end
+$var parameter 32 * DATA_WIDTH $end
+$var reg 1 + abort $end
+$var reg 8 , addr [7:0] $end
+$var reg 1 - bmode $end
+$var reg 4 . burst_len [3:0] $end
+$var reg 1 / clk $end
+$var reg 1 0 req $end
+$var reg 1 1 rst $end
+$var reg 1 2 rw $end
+$var reg 8 3 test_data [7:0] $end
+$scope module uut $end
+$var wire 1 + abort $end
+$var wire 8 4 addr [7:0] $end
+$var wire 1 - bmode $end
+$var wire 4 5 burst_len [3:0] $end
+$var wire 1 / clk $end
+$var wire 8 6 data_cn_in_out [7:0] $end
+$var wire 8 7 data_cn_ram [7:0] $end
+$var wire 1 0 req $end
+$var wire 1 1 rst $end
+$var wire 1 2 rw $end
+$var wire 1 $ ram_stat $end
+$var wire 1 ( busy $end
+$var parameter 32 8 ADDRESS_WIDTH $end
+$var parameter 4 9 BE $end
+$var parameter 32 : DATA_WIDTH $end
+$var parameter 4 ; IDLE $end
+$var parameter 2 < MAXTRY $end
+$var parameter 4 = PRE $end
+$var parameter 4 > PRE_IDLE $end
+$var parameter 4 ? READ $end
+$var parameter 4 @ WRITE $end
+$var reg 8 A addr_reg [7:0] $end
+$var reg 1 B bmode_reg $end
+$var reg 4 C burst_count [3:0] $end
+$var reg 4 D burst_len_reg [3:0] $end
+$var reg 1 ' ce $end
+$var reg 8 E data_reg [7:0] $end
+$var reg 1 F done $end
+$var reg 1 G error_flag $end
+$var reg 4 H next_state [3:0] $end
+$var reg 1 % oe $end
+$var reg 1 I req_reg $end
+$var reg 1 J rw_reg $end
+$var reg 4 K state [3:0] $end
+$var reg 1 # tri_o $end
+$var reg 2 L try [1:0] $end
+$var reg 1 " wre $end
+$upscope $end
+$scope module uut1 $end
+$var wire 8 M addr [7:0] $end
+$var wire 1 ' ce $end
+$var wire 1 / clk $end
+$var wire 8 N data [7:0] $end
+$var wire 1 % oe $end
+$var wire 1 1 rst $end
+$var wire 1 " wre $end
+$var wire 1 $ done $end
+$var parameter 32 O ADDRESS_WIDTH $end
+$var parameter 32 P DATA_WIDTH $end
+$var parameter 32 Q DEPTH $end
+$var reg 8 R TEMPDATA [7:0] $end
+$var reg 1 $ status $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+b100000000 Q
+b1000 P
+b1000 O
+b11 @
+b100 ?
+b0 >
+b10 =
+b11 <
+b1 ;
+b1000 :
+b101 9
+b1000 8
+b1000 *
+b1000 )
+$end
+#0
+$dumpvars
+b0 R
+bz N
+b0 M
+b0 L
+b0 K
+0J
+0I
+b1 H
+0G
+0F
+b0 E
+b0 D
+b0 C
+0B
+b0 A
+bz 7
+bz 6
+bx 5
+b0 4
+b0 3
+02
+01
+00
+0/
+bx .
+0-
+b0 ,
+x+
+0(
+0'
+bz &
+0%
+0$
+1#
+0"
+bz !
+$end
+#5000
+1/
+#10000
+b1 H
+b1 &
+b1 6
+0/
+b1 3
+10
+12
+11
+#15000
+b10 H
+b1 K
+1/
+#20000
+0/
+#25000
+1(
+b11 H
+b1 E
+bx D
+1J
+b10 K
+1/
+#30000
+0/
+#35000
+b1 !
+b1 7
+b1 N
+0#
+1"
+1'
+b11 K
+1/
+#40000
+0/
+00
+#45000
+b1 H
+1$
+1/
+#50000
+0/
+#55000
+bz !
+bz 7
+bz N
+0(
+1#
+0"
+0'
+b1 K
+1$
+1/
+#60000
+0/
+#65000
+0$
+1/
+#70000
+0/
+#75000
+1/
+#80000
+0/

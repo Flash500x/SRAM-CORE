@@ -1,7 +1,4 @@
 `timescale 1ns / 1ps
-
-
-
 module controller_tb(
 
     );
@@ -16,7 +13,7 @@ module controller_tb(
         wire busy;
         wire [DATA_WIDTH-1:0]data_cn_in_out;
         reg [DATA_WIDTH-1:0]test_data;
-        
+
         controller uut(
             .clk(clk),
             .rst(rst),
@@ -45,11 +42,13 @@ module controller_tb(
         .clk(clk),
         .rst(rst)
         );
-        
+
         assign data_cn_in_out = (rw) ? test_data : {DATA_WIDTH{1'bz}};
         always #5 clk = ~clk;
-        
+
         initial begin
+            $dumpfile("wave.vcd");
+            $dumpvars(0,controller_tb);
             clk = 0;
             rst = 1'b0;
             addr = 0;
@@ -66,7 +65,8 @@ module controller_tb(
             #30;
             req = 0;
             #40;
-            
+
         $finish;
         end
 endmodule
+
