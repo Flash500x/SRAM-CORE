@@ -14,7 +14,7 @@ module controller_tb(
         wire [ADDRESS_WIDTH-1:0]sram_addr;
         wire [DATA_WIDTH-1:0]data_cn_in_out;
         reg [DATA_WIDTH-1:0]test_data;
-
+        reg data_valid;
         controller uut(
             .clk(clk),
             .rst(rst),
@@ -32,7 +32,8 @@ module controller_tb(
             .tri_o(tri_o),
             .busy(busy),
             .data_cn_in_out(data_cn_in_out),
-            .sram_addr(sram_addr)
+            .sram_addr(sram_addr),
+            .data_valid(data_valid)
 
         );
         spsram uut1(
@@ -59,117 +60,40 @@ module controller_tb(
     rw = 0;
     bmode = 0;
     test_data = 0;
-
+    abort = 0;
+    burst_len = 4'b0000;
+    data_valid = 0;
     // Reset
     #10;
     rst = 1'b1;
-
-    // =========================
-    // WRITE 1: address 00 = 03
-    // =========================
-    #10;
-    addr = 8'h00;
-    rw = 1'b1;
-    test_data = 8'h03;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    // Wait for completion
-    #30;
-
-    // =========================
-    // WRITE 2: address 01 = AA
-    // =========================
-    addr = 8'h01;
-    rw = 1'b1;
-    test_data = 8'hAA;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    #30;
-
-    // =========================
-    // WRITE 3: address 02 = 55
-    // =========================
-    addr = 8'h02;
-    rw = 1'b1;
-    test_data = 8'h55;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    #30;
-
-    // =========================
-    // WRITE 4: address FF = F0
-    // =========================
-    addr = 8'hFF;
-    rw = 1'b1;
-    test_data = 8'hF0;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    #30;
-
-    // =========================
-    // READ 1: address 00
-    // Expected = 03
-    // =========================
-    addr = 8'h00;
-    rw = 1'b0;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    #30;
-
-    // =========================
-    // READ 2: address 01
-    // Expected = AA
-    // =========================
-    addr = 8'h01;
-    rw = 1'b0;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    #30;
-
-    // =========================
-    // READ 3: address 02
-    // Expected = 55
-    // =========================
-    addr = 8'h02;
-    rw = 1'b0;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    #30;
-
-    // =========================
-    // READ 4: address FF
-    // Expected = F0
-    // =========================
-    addr = 8'hFF;
-    rw = 1'b0;
-    req = 1'b1;
-
-    #10;
-    req = 1'b0;
-
-    #40;
-
+    #20;
+        addr = 8'h01;
+        req = 1'b1;
+        bmode = 1'b1;
+        rw = 1'b1;
+        burst_len = 4'd3;
+        
+        test_data = 8'h02;
+        data_valid = 1'b1;
+        
+        #30;
+        req = 1'b0;
+        
+        test_data = 8'h03;
+        data_valid = 1'b1;
+        
+        #30;
+        test_data = 8'h07;
+        data_valid = 1'b1;
+        
+        #30;
+        data_valid = 1'b0;
+        bmode = 1'b0;
+        rw = 1'b0;
+        
+        #30;
+        
+        
     $finish;
 end
 endmodule

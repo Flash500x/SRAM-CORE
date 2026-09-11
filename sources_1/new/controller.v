@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module controller #(parameter DATA_WIDTH = 8, parameter ADDRESS_WIDTH = 8)(
-input wire req,rw,clk,rst,bmode,abort,ram_stat,
+input wire req,rw,clk,rst,bmode,abort,ram_stat,data_valid,
 input [3:0]burst_len,
 inout wire [DATA_WIDTH-1:0]data_cn_ram,
 input wire [ADDRESS_WIDTH-1:0]addr,
@@ -50,7 +50,6 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                     addr_reg  <= 0;
                     data_reg  <= 0;
                     rw_reg    <= 0;
-
                     error_flag <=0;
                     done <=0;
                     burst_count <= 1'b0;
@@ -81,6 +80,7 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                                     begin
                                             if(burst_count < burst_len_reg -1)
                                                 begin
+                                                    data_reg <= data_cn_in_out;
                                                     burst_count <= burst_count +1'b1;
                                                     addr_reg <= addr_reg + 1'b1;
                                                 end
@@ -107,6 +107,10 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
 
         begin
         next_state = state;
+        if(abort)
+            next_state = IDLE;
+        else
+            begin
             case(state)
 
                 PRE_IDLE : next_state = IDLE;
@@ -128,11 +132,10 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                             if(ram_stat && bmode_reg)
                                 begin
 
-                                            if(burst_count == burst_len_reg -1)
+                                            if(burst_count < burst_len_reg -1)
                                                 next_state = BE;
                                             else
                                                 next_state = WRITE;
-
 
                                 end
                             else if(ram_stat && ~bmode_reg)
@@ -141,7 +144,6 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                 READ: begin
                             if(ram_stat && bmode_reg)
                                 begin
-
                                             if(burst_count == burst_len_reg -1)
                                                 next_state = BE;
                                             else
@@ -154,6 +156,7 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                         end
                 BE: next_state = IDLE;
             endcase
+            end
         end
     //next-state-logic
 
