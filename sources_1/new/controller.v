@@ -37,6 +37,7 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
     assign data_cn_ram = tri_o == 0? data_reg : {DATA_WIDTH{1'hz}};
     assign busy = (state == IDLE || state == PRE_IDLE)? 1'b0:1'b1;
     assign sram_addr = addr_reg;
+    assign data_cn_in_out = (state == READ && tri_o == 1)? data_cn_ram : {DATA_WIDTH{1'hz}};
     //cont assignments
 
     //state-register
@@ -49,6 +50,7 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                     addr_reg  <= 0;
                     data_reg  <= 0;
                     rw_reg    <= 0;
+
                     error_flag <=0;
                     done <=0;
                     burst_count <= 1'b0;
@@ -65,6 +67,7 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                         begin
                             addr_reg <= addr;
                             rw_reg <= rw;
+
                             bmode_reg <= bmode;
                             burst_len_reg <= burst_len;
                             burst_count <= 1'b0;
@@ -72,8 +75,20 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                             if(rw)
                                 data_reg <= data_cn_in_out;
                         end
-                    else if(state == WRITE || state == READ)
+                    else if(state == WRITE)
                             begin
+                                if(ram_stat && bmode_reg)
+                                    begin
+                                            if(burst_count < burst_len_reg -1)
+                                                begin
+                                                    burst_count <= burst_count +1'b1;
+                                                    addr_reg <= addr_reg + 1'b1;
+                                                end
+                                    end
+                         end
+                    else if(state == READ)
+                            begin
+                                 data_reg <=0;
                                 if(ram_stat && bmode_reg)
                                     begin
                                             if(burst_count < burst_len_reg -1)
