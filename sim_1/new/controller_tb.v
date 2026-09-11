@@ -11,6 +11,7 @@ module controller_tb(
         wire wre,oe,ce,tri_o;
         wire ram_stat;
         wire busy;
+        wire [ADDRESS_WIDTH-1:0]sram_addr;
         wire [DATA_WIDTH-1:0]data_cn_in_out;
         reg [DATA_WIDTH-1:0]test_data;
 
@@ -30,15 +31,17 @@ module controller_tb(
             .ce(ce),
             .tri_o(tri_o),
             .busy(busy),
-            .data_cn_in_out(data_cn_in_out)
+            .data_cn_in_out(data_cn_in_out),
+            .sram_addr(sram_addr)
+
         );
         spsram uut1(
         .oe(oe),
         .wre(wre),
         .ce(ce),
-        .addr(addr),
+        .addr(sram_addr),
         .data(data_cn_ram),
-        .done(ram_stat),
+        .status(ram_stat),
         .clk(clk),
         .rst(rst)
         );
@@ -61,8 +64,14 @@ module controller_tb(
             addr = 8'b0000_0000;
             rw = 1'b1;
             req = 1;
-            test_data = 8'b0000_0001;
+            test_data = 8'b0000_0011;
             #30;
+            req = 0;
+            #40;
+            req = 1'b1;
+            addr = 8'b0000_0000;
+            rw = 1'b0;
+            #40;
             req = 0;
             #40;
 
