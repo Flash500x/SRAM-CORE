@@ -15,7 +15,7 @@ reg [ADDRESS_WIDTH-1:0] addr;
 
 wire wre,oe,ce,tri_o;
 wire ram_stat;
-wire busy;
+wire busy,done;
 wire [ADDRESS_WIDTH-1:0] sram_addr;
 wire [DATA_WIDTH-1:0] data_cn_in_out;
 
@@ -41,7 +41,8 @@ controller uut(
     .busy(busy),
     .data_cn_in_out(data_cn_in_out),
     .sram_addr(sram_addr),
-    .data_valid(data_valid)
+    .data_valid(data_valid),
+    .done(done)
 );
 
 
