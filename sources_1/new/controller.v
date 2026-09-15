@@ -74,6 +74,8 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                             if(rw)
                                 data_reg <= data_cn_in_out;
                         end
+                    if(burst_count == burst_len_reg - 1 && ram_stat)
+                        done <= 1'b1;
                     else if(state == BE)
                     begin
                             if(rw_reg && bmode_reg && ram_stat && burst_count < burst_len_reg -1)
@@ -87,22 +89,28 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                                 burst_count <= burst_count +1'b1;
                                 addr_reg <= addr_reg + 1'b1;
                             end
-
-
                     end
 
 
                     else if(state == WRITE)
                             begin
-                                if(ram_stat && bmode_reg)
+                                if(bmode_reg)
                                     begin
-                                            if(burst_count < burst_len_reg -1)
-                                                begin
-                                                    data_reg <= data_cn_in_out;
-
-                                                end
+                                        if(ram_stat)
+                                        begin
+                                                if(burst_count < burst_len_reg -1)
+                                                    begin
+                                                        data_reg <= data_cn_in_out;
+                                                    end
+                                        end
                                     end
+
                          end
+                   /* else if(state == READ)
+                        begin
+                                if(!bmode_reg && ram_stat)
+                                 done <= 1'b1;
+                        end */
 
 
                 end
