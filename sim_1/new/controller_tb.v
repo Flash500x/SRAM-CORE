@@ -47,7 +47,7 @@ module controller_tb(
         .rst(rst)
         );
 
-        assign data_cn_in_out = (rw && req) ? test_data : {DATA_WIDTH{1'bz}};
+        assign data_cn_in_out = (rw) ? test_data : {DATA_WIDTH{1'bz}};
         always #5 clk = ~clk;
 
         initial begin
@@ -72,28 +72,49 @@ module controller_tb(
         bmode = 1'b1;
         rw = 1'b1;
         burst_len = 4'd3;
-        
+
         test_data = 8'h02;
         data_valid = 1'b1;
-        
+
         #30;
         req = 1'b0;
-        
+
         test_data = 8'h03;
         data_valid = 1'b1;
-        
+
         #30;
         test_data = 8'h07;
         data_valid = 1'b1;
-        
+
         #30;
         data_valid = 1'b0;
         bmode = 1'b0;
         rw = 1'b0;
-        
+
         #30;
-        
-        
+        req = 1'b1;
+        bmode = 1'b1;
+        addr = 8'h01;
+        #90;
+        req = 1'b0;
+        #30;
+        req = 1'b1;
+        rw = 1'b1;
+        test_data = 8'h05;
+        bmode = 1'b0;
+        addr = 8'h04;
+        #30;
+        req = 1'b0;
+        #30
+        req = 1'b1;
+        rw = 1'b0;
+
+        addr = 8'h04;
+        #30;
+        req = 1'b0;
+        #30;
+
+
     $finish;
 end
 endmodule
