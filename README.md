@@ -1,104 +1,151 @@
 # SRAM-CORE
 
-A parameterized Verilog SRAM controller and behavioral single-port SRAM model with support for single-word accesses, sequential bursts, transaction status, and abort handling.
+Parameterized Verilog RTL for a synchronous single-port SRAM controller, behavioral SRAM model, and supporting read/write finite-state machines.
 
-The design is organized as a small controller around a synchronous SRAM model. It is suitable for learning, simulation, and as a starting point for FPGA-based external SRAM interfaces.
+The repository contains two controller implementations:
 
-> **Status:** This repository is an RTL prototype. Review and adapt the timing, I/O constraints, and target-device primitives before using it with physical SRAM hardware.
+- `controller.v`: primary controller with single-word and incrementing burst transactions.
+- `wr_rd_fsm.v`: alternate read/write FSM with parity-bit generation, parity checking, retry handling, and error reporting.
 
-## Features
+The RTL is currently structured as a simulation and FPGA-development prototype. The behavioral SRAM model and included timing constraint must be replaced or extended for a specific external SRAM device and board.
 
-- Parameterized address and data widths.
-- Single-word read and write transactions.
-- Incrementing burst reads and writes.
-- `busy` and `done` transaction status signals.
-- Active-low asynchronous reset.
-- Abort input for cancelling an in-progress transaction.
-- Tri-stated bidirectional SRAM data bus.
-- Behavioral synchronous SRAM model for simulation.
-- Separate simulation scenarios for normal accesses and corrupted-memory testing.
-- Vivado XDC clock constraint for a 100 MHz clock (`10 ns` period).
+## Design parameters
 
-## Repository layout
+The primary controller and SRAM model default to:
+
+| Parameter | Default | Description |
+|---|---:|---|
+| `DATA_WIDTH` | `8` | Width of the host and SRAM data buses. |
+| `ADDRESS_WIDTH` | `8` | Width of the address bus. |
+| Derived depth | `256` | `2 ** ADDRESS_WIDTH` SRAM locations. |
+
+The alternate `wr_rd_fsm` uses a `DATA_WIDTH + 1` bidirectional SRAM bus in its interface so that one additional bit can carry even-parity information.
+
+## Source tree
 
 ```text
 sources_1/new/
-├── controller.v       # Main single-word and burst SRAM controller
+├── controller.v       # Primary SRAM controller
 ├── spsram.v           # Behavioral synchronous single-port SRAM model
-├── wr_rd_fsm.v        # Lower-level read/write FSM with parity checking and retries
-└── simpfsm.v          # Minimal one-cycle write-request FSM example
+├── wr_rd_fsm.v        # Alternate read/write FSM with parity retries
+└── simpfsm.v          # Minimal one-cycle write-enable FSM
 
 sim_1/new/
-├── controller_tb.v    # Main controller + SRAM integration testbench
-├── rdwrfsmsim.v      # Read/write FSM simulation, including parity corruption tests
-├── simpfsmsim.v      # Simple FSM simulation
-└── ...
+├── controller_tb.v    # controller + spsram integration testbench
+├── rdwrfsmsim.v      # wr_rd_fsm + spsram simulation
+├── simpfsmsim.v      # simpfsm simulation
+└── spsramsim.v       # spsram simulation
 
 constrs_1/new/
-└── sram_controller.xdc  # 10 ns clock constraint
+└── sram_controller.xdc  # 100 MHz clock constraint
 
-sim.vvp                # Existing compiled simulation artifact
+sim.vvp                # Existing compiled simulator output
 wave.vcd               # Existing waveform output
-utils_1/imports/       # Imported Vivado synthesis artifact(s)
+utils_1/imports/       # Imported Vivado synthesis artifacts
 ```
 
-## Architecture
+## Primary controller: `controller.v`
 
-The primary design path is:
+### Interface
+
+```verilog
+module controller #(
+    parameter DATA_WIDTH    = 8,
+    parameter ADDRESS_WIDTH = 8
+)(
+    input  wire                  req,
+    input  wire                  rw,
+    input  wire                  clk,
+    input  wire                  rst,
+    input  wire                  bmode,
+    input  wire                  abort,
+    input  wire                  ram_stat,
+    input  wire                  data_valid,
+    input  wire [3:0]            burst_len,
+    inout  wire [DATA_WIDTH-1:0] data_cn_ram,
+    input  wire [ADDRESS_WIDTH-1:0] addr,
+    output wire [ADDRESS_WIDTH-1:0] sram_addr,
+    output reg                   wre,
+    output reg                   oe,
+    output reg                   ce,
+    output reg                   tri_o,
+    output reg                   done,
+    output reg                   error_flag,
+    output                       busy,
+    inout  wire [DATA_WIDTH-1:0] data_cn_in_out
+);
+```
+
+### Control semantics
+
+- `rst` is an active-low asynchronous reset.
+- `req` starts a transaction when the controller is idle.
+- `rw = 1` selects a write; `rw = 0` selects a read.
+- `addr` is captured as the first address of the transaction.
+- `bmode = 1` enables an incrementing burst.
+- `burst_len` specifies the number of words in the burst.
+- `abort` forces the next-state logic back to `IDLE`.
+- `ram_stat` indicates that the SRAM model has completed the current read or write cycle.
+- `busy` is asserted while the controller is in an active transaction state.
+- `done` is a completion pulse generated when the requested operation completes.
+- `sram_addr` increments after each completed burst word.
+
+`data_cn_in_out` is the host-side bidirectional data bus. During a write, the host drives this bus before the controller captures the write data. During a read, the controller drives the bus from the SRAM-side bus. `data_cn_ram` is the corresponding bidirectional SRAM bus.
+
+### State machine
+
+`controller.v` implements the following states:
+
+| State | Function | SRAM controls (`ce`, `oe`, `wre`) |
+|---|---|---|
+| `PRE_IDLE` | Reset-release staging state. | `0, 0, 0` |
+| `IDLE` | Accept a new request. | `0, 0, 0` |
+| `PRE` | Insert a setup cycle after request capture. | `0, 0, 0` |
+| `WRITE` | Drive the SRAM data bus and wait for `ram_stat`. | `1, 0, 1` |
+| `READ` | Enable the SRAM output and wait for `ram_stat`. | `1, 1, 0` |
+| `BE` | Burst boundary/setup cycle; increment address and count. | `0, 0, 0` |
+
+For a burst, the controller repeats `WRITE` or `READ` through `BE` until `burst_count == burst_len - 1`. The address is incremented by one for each subsequent word.
+
+## SRAM model: `spsram.v`
+
+`spsram.v` models a synchronous single-port memory:
+
+- Memory depth: `2 ** ADDRESS_WIDTH`.
+- Memory word width: `DATA_WIDTH`.
+- Write occurs on a rising clock edge when `ce && wre` is asserted.
+- Read data is captured on a rising clock edge when `ce && oe && !wre` is asserted.
+- `status` pulses high for the clock cycle in which a read or write is accepted.
+- The `data` bus is high impedance except while a read result is being presented.
+- Reset is active-low and asynchronous for the status and temporary read-data registers.
+
+This module is a behavioral model; it does not infer or instantiate a particular FPGA block RAM or guarantee timing compatibility with an external asynchronous or synchronous SRAM device.
+
+## Alternate FSM: `wr_rd_fsm.v`
+
+`wr_rd_fsm.v` provides a smaller transaction engine with these states:
 
 ```text
-Host-side request/data bus
-          │
-          ▼
-     controller.v
-          │  ce / oe / wre / address / data
-          ▼
-       spsram.v
+IDLE -> READ -> READ_WAIT -> IDLE
+  └──> WRITE ─────────────> IDLE
 ```
 
-`controller.v` sequences transactions through the following states:
+Additional behavior:
 
-- `PRE_IDLE` / `IDLE` — wait for a request.
-- `PRE` — capture the request type and transaction parameters.
-- `WRITE` — drive the SRAM data bus and wait for the SRAM status signal.
-- `READ` — enable the SRAM output and wait for the SRAM status signal.
-- `BE` — advance the address and burst counter between words.
+- Writes place `{parity, data}` on the SRAM bus, where parity is the reduction XOR of the data word.
+- Reads compare the returned parity bit with the reduction XOR of the data bits.
+- Failed parity checks retry up to `MAXTRY` (`3`) times.
+- `error_flag` is asserted after the retry limit is exhausted.
+- `done` pulses after a successful read or write.
+- `abort` returns an active write transaction to `IDLE`.
 
-The `wr_rd_fsm.v` module is an alternate, lower-level read/write FSM. It adds parity checking, read retries, an `error_flag`, and a configurable `MAXTRY` limit. It is exercised by `rdwrfsmsim.v` and is not instantiated by the current `controller.v` implementation.
-
-## Main controller interface
-
-The default parameters are `DATA_WIDTH = 8` and `ADDRESS_WIDTH = 8`, giving a 256-word by 8-bit address space.
-
-| Signal | Direction | Description |
-|---|---|---|
-| `clk` | input | Controller clock. |
-| `rst` | input | Active-low asynchronous reset. |
-| `req` | input | Starts a transaction when the controller is idle. |
-| `rw` | input | `1` = write, `0` = read. |
-| `addr` | input | Starting SRAM address. |
-| `bmode` | input | Enables burst mode. |
-| `burst_len[3:0]` | input | Number of words in a burst. Use `1` for a one-word burst. |
-| `abort` | input | Returns the controller to `IDLE`. |
-| `data_cn_in_out` | bidirectional | Host-side data bus. Drive write data; sample read data. |
-| `data_cn_ram` | bidirectional | SRAM-side data bus. |
-| `sram_addr` | output | Current SRAM address. |
-| `ce` | output | SRAM chip enable. |
-| `oe` | output | SRAM output enable. |
-| `wre` | output | SRAM write enable. |
-| `tri_o` | output | Indicates host-side bus direction control. |
-| `busy` | output | High while a transaction is active. |
-| `done` | output | Completion pulse for a transaction or burst. |
-| `ram_stat` | input | SRAM operation-complete/status indication. |
-| `data_valid` | input | Data-valid input exposed by the controller interface. |
-
-For a write, the host should place data on `data_cn_in_out` while the controller is accepting the request. For a read, the controller releases the host-side bus and presents the SRAM data when the read completes. External integration logic should use `busy` and `done` to coordinate requests and data capture.
+This module is an alternate implementation and is not instantiated by `controller.v`.
 
 ## Simulation
 
-The testbenches use Verilog system tasks to generate `wave.vcd`. A simulator such as Icarus Verilog can be used from the repository root.
+The testbenches use a 10 ns clock (`always #5 clk = ~clk`) and generate a VCD waveform.
 
-### Main controller testbench
+### Primary controller testbench
 
 ```bash
 iverilog -g2012 -o sim_controller \
@@ -108,16 +155,16 @@ iverilog -g2012 -o sim_controller \
 vvp sim_controller
 ```
 
-The main testbench covers:
+`controller_tb.v` exercises:
 
-- Burst writes and burst reads.
-- Normal single-word writes and reads.
-- Multiple addresses.
-- One-word bursts.
-- Aborting a burst.
-- Transactions after an abort.
+- Three-word burst write and read.
+- Single-word read and write.
+- Multiple independent addresses.
+- One-word burst operations.
+- Aborting an active burst.
+- Transactions issued after an abort.
 
-### Read/write FSM testbench
+### Alternate read/write FSM testbench
 
 ```bash
 iverilog -g2012 -o sim_rdwr \
@@ -127,40 +174,33 @@ iverilog -g2012 -o sim_rdwr \
 vvp sim_rdwr
 ```
 
-This scenario exercises normal reads and writes, intentionally corrupts one SRAM bit, and checks the parity-error retry path before restoring the memory location.
+The testbench performs normal accesses, forces a memory-bit corruption, verifies the parity-check/retry path, releases the forced bit, and performs a recovery read.
 
-To view a generated waveform, open `wave.vcd` with a viewer such as GTKWave:
+To inspect the generated waveform:
 
 ```bash
 gtkwave wave.vcd
 ```
 
-## FPGA implementation
+## FPGA constraints
 
-The repository includes a Vivado constraint file at [`constrs_1/new/sram_controller.xdc`](constrs_1/new/sram_controller.xdc) containing a 100 MHz clock constraint:
+The included XDC file defines a 100 MHz clock:
 
 ```tcl
 create_clock -period 10.000 [get_ports clk]
 ```
 
-Before implementation on a board, add pin and I/O-standard constraints for the clock, SRAM control signals, address bus, and bidirectional data bus. The included constraint is not sufficient by itself for a physical FPGA design.
+The XDC does not contain package-pin, I/O-standard, drive-strength, slew-rate, or external-SRAM timing constraints. Those constraints must be added for the target FPGA board and memory device. In particular, the bidirectional data bus requires correct top-level tri-state integration to prevent bus contention.
 
-## Design considerations
+## Known limitations
 
-- `spsram.v` is a behavioral model, not a vendor-specific block-RAM or external-SRAM interface primitive.
-- The external SRAM timing requirements must be checked against the target memory datasheet and clock frequency.
-- The bidirectional buses require correct top-level tri-state handling to avoid contention.
-- `burst_len` is four bits wide; integration logic should define and enforce the legal range of burst lengths.
-- The repository contains generated artifacts (`sim.vvp`, `wave.vcd`, and a synthesis checkpoint). They are useful for inspection but are not required to rebuild the RTL.
+- `spsram.v` is intended for simulation and does not model SRAM setup, hold, access, or turnaround timing.
+- The primary controller exposes `error_flag` and `data_valid`, but the current `controller.v` implementation does not contain functional logic that asserts or consumes them.
+- `burst_len` is four bits wide; system-level logic should define behavior for zero and otherwise invalid lengths.
+- The primary controller and alternate parity FSM use different data-bus conventions. Do not connect them interchangeably without adapting the bus width and parity handling.
+- Existing `sim.vvp`, `wave.vcd`, and synthesis checkpoint files are generated artifacts and are not required to compile the RTL.
+- No software driver, synthesis project file, or board-specific pinout is included.
 
 ## License
 
-No license file is currently included. Add a license before redistributing or incorporating this design into another project.
-
-## Contributing
-
-1. Create a feature branch.
-2. Make RTL changes and add or update a focused testbench.
-3. Run the relevant simulations and inspect the generated waveform when timing or bus direction changes.
-4. Document interface or protocol changes in this README.
-5. Open a pull request with the simulation command and result summary.
+No license file is currently included. Add a license before redistributing or incorporating this RTL into another project.
