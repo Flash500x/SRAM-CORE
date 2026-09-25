@@ -1,13 +1,13 @@
 `timescale 1ns / 1ps
 
 module controller #(parameter DATA_WIDTH = 8, parameter ADDRESS_WIDTH = 8)(
-input wire req,rw,clk,rst,bmode,abort,ram_stat,data_valid,
+input wire req,rw,clk,rst,bmode,abort,ram_stat,
 input [3:0]burst_len,
 inout wire [DATA_WIDTH-1:0]data_cn_ram,
 input wire [ADDRESS_WIDTH-1:0]addr,
 output wire [ADDRESS_WIDTH-1:0]sram_addr,
 output reg wre,oe,ce,tri_o,
-output reg done,error_flag,
+output reg done,
 output busy,
 inout wire [DATA_WIDTH-1:0]data_cn_in_out
     );
@@ -39,6 +39,18 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
     assign sram_addr = addr_reg;
     assign data_cn_in_out = (state == READ && tri_o == 1)? data_cn_ram : {DATA_WIDTH{1'hz}};
     //cont assignments
+    //single port sram
+    spsram uut1(
+    .oe(oe),
+    .wre(wre),
+    .ce(ce),
+    .addr(sram_addr),
+    .data(data_cn_ram),
+    .status(ram_stat),
+    .clk(clk),
+    .rst(rst)
+);
+    //single port sram
 
     //state-register
     always @(posedge clk or negedge rst)
@@ -50,7 +62,6 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                     addr_reg  <= 0;
                     data_reg  <= 0;
                     rw_reg    <= 0;
-                    error_flag <=0;
                     done <=0;
                     burst_count <= 1'b0;
                     bmode_reg <= 0;
@@ -70,12 +81,11 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                             bmode_reg <= bmode;
                             burst_len_reg <= burst_len;
                             burst_count <= 1'b0;
-                            error_flag <=0;
+                            
                             if(rw)
                                 data_reg <= data_cn_in_out;
                         end
-                    if(burst_count == burst_len_reg - 1 && ram_stat)
-                        done <= 1'b1;
+                    
                     else if(state == BE)
                     begin
                             if(rw_reg && bmode_reg && ram_stat && burst_count < burst_len_reg -1)
@@ -94,6 +104,8 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
 
                     else if(state == WRITE)
                             begin
+                            data_reg <= data_cn_in_out;
+                            done <= 1'b1;
                                 if(bmode_reg)
                                     begin
                                         if(ram_stat)
@@ -102,6 +114,8 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                                                     begin
                                                         data_reg <= data_cn_in_out;
                                                     end
+                                                else
+                                                done <= 1'b1;
                                         end
                                     end
 
@@ -144,6 +158,7 @@ inout wire [DATA_WIDTH-1:0]data_cn_in_out
                             next_state = READ;
                      end
                 WRITE: begin
+                            
                             if(ram_stat && bmode_reg)
                                 begin
 

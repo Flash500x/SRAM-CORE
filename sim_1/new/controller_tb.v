@@ -41,21 +41,12 @@ controller uut(
     .busy(busy),
     .data_cn_in_out(data_cn_in_out),
     .sram_addr(sram_addr),
-    .data_valid(data_valid),
+    
     .done(done)
 );
 
 
-spsram uut1(
-    .oe(oe),
-    .wre(wre),
-    .ce(ce),
-    .addr(sram_addr),
-    .data(data_cn_ram),
-    .status(ram_stat),
-    .clk(clk),
-    .rst(rst)
-);
+
 
 
 assign data_cn_in_out =
