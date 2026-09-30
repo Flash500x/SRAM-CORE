@@ -70,7 +70,6 @@ wire [BURST_LENGTH-1:0]  burst_len;
 
 wire done;
 
-
 //====================================================
 // SRAM CONTROLLER
 //====================================================
@@ -87,7 +86,6 @@ controller uut (
     .done(done)
 );
 
-
 //====================================================
 // AXI SLAVE
 //====================================================
@@ -96,7 +94,6 @@ AXI_SLAVE #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH),
     .BURST_LENGTH(BURST_LENGTH)
 ) dut (
-
     .ACLK(ACLK),
     .ARST(ARST),
 
@@ -147,12 +144,10 @@ AXI_SLAVE #(
     .done(done)
 );
 
-
 //====================================================
 // CLOCK
 //====================================================
 always #5 ACLK = ~ACLK;
-
 
 //====================================================
 // TEST SEQUENCE
@@ -199,80 +194,65 @@ initial begin
 
 
     //================================================
-    // WRITE TRANSACTION
+    // NORMAL SINGLE-BEAT WRITE
     //================================================
 
-    // Write address
     #5;
 
     AWADDR  = 8'b0000_0001;
-    AWLEN   = 3'b000;       // Single beat
+    AWLEN   = 3'b000;       // 1 beat
     AWBURST = 2'b01;        // INCR
     AWVALID = 1'b1;
     AWID    = 2'b01;
-
 
     // Wait for AW handshake
     #5;
 
     AWVALID = 1'b0;
 
-
     // Write data
     WDATA  = 8'b0000_0101;
     WVALID = 1'b1;
     WLAST  = 1'b1;
 
-
     // Write response ready
     BREADY = 1'b1;
 
-
     // Wait for SRAM operation
-    #40;
-
+    #20;
 
     // End write transaction
     WVALID = 1'b0;
-    WLAST   = 1'b0;
-    BREADY  = 1'b0;
+    WLAST  = 1'b0;
+    BREADY = 1'b0;
 
 
     //================================================
-    // READ TRANSACTION
+    // NORMAL SINGLE-BEAT READ
     //================================================
 
     #10;
 
-    // Read address
     ARADDR  = 8'b0000_0001;
-    ARLEN   = 3'b000;       // Single beat
+    ARLEN   = 3'b000;       // 1 beat
     ARBURST = 2'b01;        // INCR
     ARID    = 2'b01;
     ARVALID = 1'b1;
 
-
     // Wait for AR handshake
-    #5;
+    #10;
 
     ARVALID = 1'b0;
-
 
     // Master ready to accept read data
     RREADY = 1'b1;
 
-
     // Wait for SRAM read + R response
-    #40;
-
+    #20;
 
     // End read transaction
     RREADY = 1'b0;
 
-
-    //================================================
-    // FINISH
-    //================================================
     #20;
 
     $finish;

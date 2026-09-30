@@ -1,11 +1,16 @@
 `timescale 1ns / 1ps
-module spsram #(parameter DATA_WIDTH = 8,parameter ADDRESS_WIDTH = 8
+module dp_sram #(parameter DATA_WIDTH = 8,parameter ADDRESS_WIDTH = 8
 )(
+//channel 1
 input wire  clk,wre,oe,ce,rst,
 input wire [ADDRESS_WIDTH-1:0]addr,
-input wire [DATA_WIDTH-1:0]wdata, 
-output wire [DATA_WIDTH-1:0]rdata,
-output reg status
+inout wire [DATA_WIDTH-1:0]data, // bidirectional data bus
+output reg status,
+//channel 1
+
+//channel 2
+input wire [ADDRESS_WIDTH-1:0]addr2,
+//channel 2
     );
     localparam DEPTH = 2**ADDRESS_WIDTH;
 
@@ -14,11 +19,11 @@ output reg status
 
     always @(posedge clk or negedge rst)
         begin
-            TEMPDATA <= 0;
+
             if(!rst)
                 begin
                 status <= 1'b0;
-                
+                TEMPDATA <= 0;
                 end
             else
 
@@ -26,7 +31,7 @@ output reg status
                 status <= 0;
                 if(wre && ce)
                     begin
-                        mem[addr] <= wdata;
+                        mem[addr] <= data;
                         status <= 1'b1;
                     end
                 else if(oe && !wre && ce)
@@ -36,5 +41,6 @@ output reg status
                     end
             end
     end
-    assign rdata = TEMPDATA;
+    assign data = (!wre && ce && oe&& status)? TEMPDATA:{DATA_WIDTH{1'hz}};
+
 endmodule
