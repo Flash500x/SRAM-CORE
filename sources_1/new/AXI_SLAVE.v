@@ -19,9 +19,9 @@ parameter BURST_TYPE    = 2)(
     output wire WREADY,// output of slave
    
         //W- Write data channel
-    output reg [ID_WIDTH-1:0]BID,//transaction ID
-    output reg [1:0]BRESP,//status of write
-    output reg BVALID,//from slave
+    output wire [ID_WIDTH-1:0]BID,//transaction ID
+    output wire [1:0]BRESP,//status of write
+    output wire BVALID,//from slave
     input wire BREADY,//from master
         //B- Write response channel
     input wire [ADDRESS_WIDTH-1:0] ARADDR,//address bus
@@ -68,7 +68,7 @@ parameter BURST_TYPE    = 2)(
         )aw(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({AWADDR,AWLEN,AWBURST,AWID}),
+        .data_in({AWADDR,AWLEN + 4'd1,AWBURST,AWID}),
         .wr_en(aw_wd_en_axi),
         .rd_en(aw_rd_en_axi),
         .full(aw_fifo_full),
@@ -153,7 +153,7 @@ parameter BURST_TYPE    = 2)(
    
    //arbiter
    wire read_req = !busy && !ar_fifo_empty;
-   wire write_req = !busy && !aw_fifo_empty && !w_fifo_empty;
+   wire write_req = !busy && !aw_fifo_empty && !w_fifo_empty ;
    wire wg,rg;
    
    arbiter art(
@@ -168,9 +168,9 @@ parameter BURST_TYPE    = 2)(
    assign req = wg | rg;
    assign addr = wg ? aw_fifo_out[AW_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :(rg ? ar_fifo_out[AR_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :'hz);
    assign bmode = wg ?
-               (aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 0) :
+               (aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 1) :
                rg ?
-               (ar_fifo_out[AR_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 0) :
+               (ar_fifo_out[AR_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 1) :
                1'b0;
    assign burst_len = wg ?
                    aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] :
@@ -194,15 +194,23 @@ parameter BURST_TYPE    = 2)(
    //awfifo logic
     assign AWREADY = !aw_fifo_full;
     assign aw_wd_en_axi = AWREADY && AWVALID;
-    assign aw_rd_en_axi = wg;
+    assign aw_rd_en_axi = wg ;
    //awfifo logic
    
    //wfifo logic
    assign WREADY = !w_fifo_full;
    assign w_wd_en_axi = WREADY && WVALID;
-   assign w_rd_en_axi = wg ;
-   assign data_in = wg? w_fifo_out[W_FIFO_WIDTH -1 -:DATA_WIDTH ]:'hz;
+   assign w_rd_en_axi = wg | data_valid;
+   assign data_in = wg | data_valid? w_fifo_out[W_FIFO_WIDTH -1 -:DATA_WIDTH ]:'hz;
    //wfifo logic
+   
+   //bfifo logic
+    assign b_wd_en_axi = op_complete && !b_fifo_full;
+    assign b_rd_en_axi = BVALID && BREADY;
+    assign BVALID      = !b_fifo_empty;
+    assign BID = awid;
+    assign BRESP = 2'b00;
+   //bfifo logic
    
    
    //memory and internal register operations

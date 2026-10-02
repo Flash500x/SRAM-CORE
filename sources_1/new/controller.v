@@ -10,8 +10,8 @@ input wire [DATA_WIDTH-1:0]data_out_ram,
 input wire [ADDRESS_WIDTH-1:0]addr,
 output wire [ADDRESS_WIDTH-1:0]sram_addr,
 output reg wre,oe,ce,tri_o,
-output reg done,op_complete,data_valid,
-output busy,
+output reg op_complete,data_valid,
+output busy,done,
 input wire [DATA_WIDTH-1:0]data_in,
 output wire [DATA_WIDTH-1:0]data_out
     );
@@ -39,11 +39,11 @@ output wire [DATA_WIDTH-1:0]data_out
     //local parameters
 
     //cont assignments
-    assign data_in_ram = data_reg;
+    assign data_in_ram = (!data_valid)?data_reg:data_in;
     assign busy = (state == IDLE || state == PRE_IDLE)? 1'b0:1'b1;
     assign sram_addr = !ram_stat && !(state == IDLE || state == PRE_IDLE)? addr_reg:'hz ;
     assign data_out =  rdata_reg;
-    
+    assign done = ram_stat;
     //cont assignments
     //single port sram
 
@@ -59,7 +59,7 @@ output wire [DATA_WIDTH-1:0]data_out
                     addr_reg  <= 0;
                     data_reg  <= 0;
                     rw_reg    <= 0;
-                    done <=0;
+                    
                     burst_count <= 1'b0;
                     bmode_reg <= 0;
                     burst_len_reg <= 0;
@@ -72,7 +72,7 @@ output wire [DATA_WIDTH-1:0]data_out
              begin
                 op_complete <= 1'b0;
                 state <= next_state;
-                done <= 0;
+                
                 rdata_reg <= 0;
                 data_valid <= 0;
                     if(state == IDLE && req)
@@ -97,7 +97,11 @@ output wire [DATA_WIDTH-1:0]data_out
 
                                 burst_count <= burst_count +1'b1;
                                 if(burst_type_reg == 2'b01)
+                                begin
                                     addr_reg <= addr_reg + 1'b1;
+                                    data_reg <= data_in;
+                                    data_valid <= 1'b1;
+                                    end
                                 else
                                     addr_reg <= addr_reg;
                             end
@@ -105,37 +109,19 @@ output wire [DATA_WIDTH-1:0]data_out
                             begin
                                 burst_count <= burst_count +1'b1;
                                 if(burst_type_reg == 2'b01)
+                                    begin
                                     addr_reg <= addr_reg + 1'b1;
+                                    data_valid <= 1'b1;
+                                    end
                                 else
                                     addr_reg <= addr_reg;
                             end
                     end
-
-
-                    else if(state == WRITE)
-                            begin
-                            data_reg <= data_in;
-                            if(ram_stat)
-                            done <= 1'b1;
-                            if(bmode_reg)
-                                    begin
-                                        if(ram_stat)
-                                        begin
-                                                if(burst_count < burst_len_reg -1)
-                                                    begin
-                                                        data_reg <= data_in;
-                                                    end
-                                                else
-                                                done <= 1'b1;
-                                        end
-                                    end
-
-                         end
                    else if(state == READ)
                         begin
                                 if(ram_stat)
                                 begin
-                                 done <= 1'b1;
+                                
                                  rdata_reg <= data_out_ram;
                                  end
                         end
@@ -148,16 +134,6 @@ output wire [DATA_WIDTH-1:0]data_out
                         if (!bmode_reg || burst_count == burst_len_reg - 1)
                             op_complete <= 1'b1;
                         end
-                    else if (state == BE)
-                    begin
-                        if(bmode_reg && rw_reg)
-                            data_valid <= 1'b1;
-                        
-                        else
-                            data_valid <= 0;
-                    end
-
-
                 end
         end
     //state-register
