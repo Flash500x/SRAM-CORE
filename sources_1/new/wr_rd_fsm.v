@@ -1,178 +1,115 @@
 `timescale 1ns / 1ps
 
-module wr_rd_fsm #(parameter ADDRESS_WIDTH=8, parameter DATA_WIDTH=8)(
-input clk,rst,req,rw,abort,write_done_ram,
-input [ADDRESS_WIDTH-1:0]addr,
-input [DATA_WIDTH-1:0]wdata,//data in
-inout [DATA_WIDTH:0]data,//sram bus,//data from contoller
-output [DATA_WIDTH-1:0]rdata,
-output [ADDRESS_WIDTH-1:0]ram_addr,//output from controller to sram module
-output reg oe,ce,wre,error_flag,done,
-output busy
-    );
-//--local parameters
-localparam MAXTRY = 3;// max tries allowed for read
-localparam IDLE = 3'b000;
-localparam READ = 3'b001;
-localparam WRITE = 3'b010;
-localparam READ_WAIT = 3'b011;
-//--local parameters
+module rd_fsm #(
+    parameter ADDRESS_WIDTH = 8,
+    parameter DATA_WIDTH = 8
+)(
+    input clk,
+    input rst,
+    input req,
+    input status2,
 
-//--internal registers
-reg [DATA_WIDTH-1:0] wdata_reg;// current data register
-reg [ADDRESS_WIDTH-1:0] addr_reg;//current address register
-reg [1:0]try;//tries counter
-reg rdata_valid;//read data validity register
-reg [DATA_WIDTH-1:0]rdata_reg;
-reg rw_reg;
-reg [2:0]state,next_state;// state register
-//--internal registers
+    input [ADDRESS_WIDTH-1:0] addr,
+    output [DATA_WIDTH-1:0] rdata,
+    input [DATA_WIDTH-1:0] rdata_ram,
+    output [ADDRESS_WIDTH-1:0] ram_addr,
+    output reg oe,
+    output reg done,
+    output busy
+);
 
-//--continous assignments
-assign data = ce && wre?{^wdata_reg,wdata_reg}:{(DATA_WIDTH+1){1'hz}};
+localparam IDLE = 2'b00;
+localparam READ = 2'b01;
+
+
+reg [ADDRESS_WIDTH-1:0] addr_reg;
+reg [DATA_WIDTH-1:0] rdata_reg;
+reg rdata_valid;
+
+reg [1:0] state;
+reg [1:0] next_state;
+
 assign ram_addr = addr_reg;
-assign busy = (state != IDLE)? 1'b1:1'b0;
-assign rdata = rdata_valid ? rdata_reg : {(DATA_WIDTH){1'hz}};
-//--continous assignments
+assign busy = (state != IDLE);
 
-//state register /memory
+assign rdata = rdata_valid ? rdata_reg : 'hz;
+
 always @(posedge clk or negedge rst) begin
-if (!rst) begin
-    state     <= IDLE;
-    rdata_reg     <= 0;
-    rdata_valid <=0;
-    try       <= 0;
-    addr_reg  <= 0;
-    wdata_reg <= 0;
-    rw_reg    <= 0;
-    error_flag <=0;
-    done <=0;
-end
-else begin
-    state <= next_state;
-    done <= 0;
-    // Accept one new request only in IDLE
-    if (state == IDLE && req) begin
-        try      <= 0;
-        addr_reg <= addr;
-        error_flag <=0;
-        rw_reg   <= rw;
-        rdata_reg    <= 0;
+    if (!rst) begin
+        state <= IDLE;
+        addr_reg <= 0;
+        rdata_reg <= 0;
         rdata_valid <= 0;
-        wdata_reg <=0;
-    
-    if (rw)
-            wdata_reg <= wdata;
-    
+        done <= 0;
+        oe <= 0;
     end
-    
-    
-    if(state == WRITE)
-        if(write_done_ram)
-            done <= 1'b1;
-       
-    // Check parity in READ-WAIT
-    if (state == READ_WAIT) begin
-        if (data[DATA_WIDTH] == ^data[DATA_WIDTH-1:0]) begin
-            rdata_reg <= data[DATA_WIDTH-1:0];
-            rdata_valid <= 1'b1;
-            try   <= 0;
-            done <= 1'b1;
+    else begin
+        state <= next_state;
+        done <= 0;
+
+        if (state == IDLE && req) begin
+            addr_reg <= addr;
+            rdata_reg <= 0;
+            rdata_valid <= 0;
+            oe <= 0;
         end
-        else if (try < MAXTRY) begin
-            try <= try + 1'b1;
+
+        if (state == READ) begin
+            if(status2)
+                begin
+                 rdata_reg <= rdata_ram;
+                rdata_valid <= 1'b1;
+                done <= 1'b1;
             end
-        else
-            error_flag <= 1'b1;
+        end
     end
 end
 
-end
-//next state logic
-always @(*)
-begin
-    case(state)
-        IDLE:
-            begin
-                if(req)
-                    begin
-                    if(rw)
-                        next_state = WRITE;
-                        else
-                        next_state = READ;
-                    end
-                else 
+always @(*) begin
+    case (state)
+
+        IDLE: begin
+            if (req)
+                next_state = READ;
+            else
                 next_state = IDLE;
-            end
-        READ:
-            
-                next_state = READ_WAIT;
-            
-        WRITE:      
-                begin
-                if(write_done_ram)
-                   next_state = IDLE;
-                else if(abort)
-                   next_state = IDLE;
-                else
-                   next_state = WRITE;
-                end
-              
-        READ_WAIT: 
-                begin
-                     if(data[DATA_WIDTH] == ^data[DATA_WIDTH-1:0])
-                     next_state = IDLE;
-                     else
-                     begin
-                        if(try < MAXTRY)
-                            next_state = READ;
-                        else 
-                            next_state = IDLE;
-                     end                       
-                end
-        default: next_state = IDLE;
+        end
+
+        READ: begin
+            if(status2)
+            next_state = IDLE;
+            else
+            next_state = READ;
+        
+        end
+        default: begin
+            next_state = IDLE;
+        end
+
     endcase
 end
 
-//output logic
-always @(*)
-    begin
-        case(state)
-        IDLE: //idle
-            begin
-            ce = 1'b0;
-            oe = 1'b0;
-            wre = 1'b0;
-           
-            end
-        READ://read
-            begin
-            ce = 1'b1;
-            oe = 1'b1;
-            wre = 1'b0;
-           
-            end
-        WRITE://write
-            begin
-            ce = 1'b1;
-            oe = 1'b0;
-            wre = 1'b1;
-            
-            end
-        READ_WAIT://read-wait
-            begin
-            ce = 1'b1;
-            oe = 1'b1;
-            wre = 1'b0;
-            end 
+always @(*) begin
+    case (state)
 
-        default:
-            begin
-            ce = 1'b0;
+        IDLE: begin
+           
             oe = 1'b0;
-            wre = 1'b0;
-            end
-        endcase
-    end
+        end
+
+        READ: begin
+           
+            oe = 1'b1;
+        end
+
+        
+
+        default: begin
+            
+            oe = 1'b0;
+        end
+
+    endcase
+end
 
 endmodule

@@ -25,6 +25,9 @@ wire [DATA_WIDTH-1:0] data_out;
 reg data_valid;
 
 
+
+
+
 controller uut(
     .clk(clk),
     .rst(rst),
@@ -57,17 +60,6 @@ controller uut(
 );
 
 
-spsram dut (
-    .clk(clk),
-    .wre(wre),
-    .oe(oe),
-    .ce(ce),
-    .rst(rst),
-    .addr(sram_addr),
-    .wdata(data_in_ram),
-    .rdata(data_out_ram),
-    .status(ram_stat)
-);
 
 
 always #7 clk = ~clk;
@@ -309,7 +301,7 @@ initial begin
     req = 1'b0;
 
 
-    #70;
+    #140;
 
     $finish;
 

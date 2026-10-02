@@ -1,262 +1,328 @@
 `timescale 1ns / 1ps
 
-module axi_tb();
+module axi_tb;
 
-localparam ADDRESS_WIDTH = 8;
-localparam DATA_WIDTH    = 8;
-localparam BURST_LENGTH  = 3;
+    parameter ADDRESS_WIDTH = 8;
+    parameter DATA_WIDTH    = 8;
+    parameter BURST_LENGTH  = 4;
+    parameter ID_WIDTH      = 2;
+    parameter BURST_TYPE    = 2;
 
-//====================================================
-// CLOCK / RESET
-//====================================================
-reg ACLK;
-reg ARST;
+    //==================================================
+    // CLOCK / RESET
+    //==================================================
+    reg ACLK;
+    reg ARST;
 
-//====================================================
-// AXI WRITE ADDRESS CHANNEL
-//====================================================
-reg  [ADDRESS_WIDTH-1:0] AWADDR;
-reg  [BURST_LENGTH-1:0]  AWLEN;
-reg  [1:0]               AWBURST;
-reg                      AWVALID;
-reg  [1:0]               AWID;
-wire                     AWREADY;
+    //==================================================
+    // AW CHANNEL
+    //==================================================
+    reg  [ADDRESS_WIDTH-1:0] AWADDR;
+    reg  [BURST_LENGTH-1:0]  AWLEN;
+    reg  [BURST_TYPE-1:0]    AWBURST;
+    reg                      AWVALID;
+    reg  [ID_WIDTH-1:0]      AWID;
+    wire                     AWREADY;
 
-//====================================================
-// AXI WRITE DATA CHANNEL
-//====================================================
-reg  [DATA_WIDTH-1:0] WDATA;
-reg                   WLAST;
-reg                   WVALID;
-wire                  WREADY;
+    //==================================================
+    // W CHANNEL
+    //==================================================
+    reg  [DATA_WIDTH-1:0] WDATA;
+    reg                   WLAST;
+    reg                   WVALID;
+    wire                  WREADY;
 
-//====================================================
-// AXI WRITE RESPONSE CHANNEL
-//====================================================
-wire [1:0] BID;
-wire       BRESP;
-wire       BVALID;
-reg        BREADY;
+    //==================================================
+    // B CHANNEL
+    //==================================================
+    wire [ID_WIDTH-1:0] BID;
+    wire [1:0]          BRESP;
+    wire                BVALID;
+    reg                 BREADY;
 
-//====================================================
-// AXI READ ADDRESS CHANNEL
-//====================================================
-reg  [ADDRESS_WIDTH-1:0] ARADDR;
-reg  [1:0]               ARID;
-reg  [1:0]               ARBURST;
-reg  [BURST_LENGTH-1:0]  ARLEN;
-reg                      ARVALID;
-wire                     ARREADY;
+    //==================================================
+    // AR CHANNEL
+    //==================================================
+    reg  [ADDRESS_WIDTH-1:0] ARADDR;
+    reg  [ID_WIDTH-1:0]     ARID;
+    reg  [BURST_TYPE-1:0]   ARBURST;
+    reg  [BURST_LENGTH-1:0] ARLEN;
+    reg                     ARVALID;
+    wire                    ARREADY;
 
-//====================================================
-// AXI READ DATA CHANNEL
-//====================================================
-wire [DATA_WIDTH-1:0] RDATA;
-wire                  RRESP;
-wire                  RLAST;
-wire                  RVALID;
-reg                   RREADY;
+    //==================================================
+    // R CHANNEL
+    //==================================================
+    wire [DATA_WIDTH-1:0] RDATA;
+    wire [ID_WIDTH-1:0]   RID;
+    wire [1:0]            RRESP;
+    wire                  RLAST;
+    wire                  RVALID;
+    reg                   RREADY;
 
-//====================================================
-// SRAM CONTROLLER ADAPTER
-//====================================================
-wire [ADDRESS_WIDTH-1:0] addr;
-wire [DATA_WIDTH-1:0]    data;
-wire                     req;
-wire                     bmode;
-wire                     abort;
-wire                     rw;
-wire [BURST_LENGTH-1:0]  burst_len;
+    //==================================================
+    // CONTROLLER INTERFACE
+    //==================================================
+    wire req;
+    wire rw;
+    wire clk;
+    wire bmode;
+    wire abort;
 
-wire done;
+    wire [3:0] burst_len;
+    wire [1:0] burst_type;
+    wire [ADDRESS_WIDTH-1:0] addr;
+    wire [DATA_WIDTH-1:0] data_in;
 
-//====================================================
-// SRAM CONTROLLER
-//====================================================
-controller uut (
-    .clk(ACLK),
-    .rst(ARST),
-    .req(req),
-    .rw(rw),
-    .bmode(bmode),
-    .abort(abort),
-    .burst_len(burst_len),
-    .addr(addr),
-    .data_cn_in_out(data),
-    .done(done)
-);
-
-//====================================================
-// AXI SLAVE
-//====================================================
-AXI_SLAVE #(
-    .DATA_WIDTH(DATA_WIDTH),
-    .ADDRESS_WIDTH(ADDRESS_WIDTH),
-    .BURST_LENGTH(BURST_LENGTH)
-) dut (
-    .ACLK(ACLK),
-    .ARST(ARST),
-
-    // AW - Write Address Channel
-    .AWADDR(AWADDR),
-    .AWLEN(AWLEN),
-    .AWBURST(AWBURST),
-    .AWVALID(AWVALID),
-    .AWID(AWID),
-    .AWREADY(AWREADY),
-
-    // W - Write Data Channel
-    .WDATA(WDATA),
-    .WLAST(WLAST),
-    .WVALID(WVALID),
-    .WREADY(WREADY),
-
-    // B - Write Response Channel
-    .BID(BID),
-    .BRESP(BRESP),
-    .BVALID(BVALID),
-    .BREADY(BREADY),
-
-    // AR - Read Address Channel
-    .ARADDR(ARADDR),
-    .ARID(ARID),
-    .ARBURST(ARBURST),
-    .ARLEN(ARLEN),
-    .ARVALID(ARVALID),
-    .ARREADY(ARREADY),
-
-    // R - Read Data Channel
-    .RDATA(RDATA),
-    .RRESP(RRESP),
-    .RLAST(RLAST),
-    .RVALID(RVALID),
-    .RREADY(RREADY),
-
-    // SRAM Controller Adapter
-    .addr(addr),
-    .data(data),
-    .req(req),
-    .bmode(bmode),
-    .abort(abort),
-    .rw(rw),
-    .burst_len(burst_len),
-
-    .done(done)
-);
-
-//====================================================
-// CLOCK
-//====================================================
-always #5 ACLK = ~ACLK;
-
-//====================================================
-// TEST SEQUENCE
-//====================================================
-initial begin
-
-    //================================================
-    // INITIALIZATION
-    //================================================
-    ACLK    = 1'b0;
-    ARST    = 1'b0;
-
-    // Write address
-    AWADDR  = 8'b0;
-    AWLEN   = 3'b000;
-    AWBURST = 2'b00;
-    AWVALID = 1'b0;
-    AWID    = 2'b00;
-
-    // Write data
-    WDATA   = 8'b0;
-    WLAST   = 1'b0;
-    WVALID  = 1'b0;
-
-    // Write response
-    BREADY  = 1'b0;
-
-    // Read address
-    ARADDR  = 8'b0;
-    ARLEN   = 3'b000;
-    ARBURST = 2'b00;
-    ARID    = 2'b00;
-    ARVALID = 1'b0;
-
-    // Read data
-    RREADY  = 1'b0;
+    wire done;
+    wire op_complete;
+    wire busy;
+    wire data_valid;
+    wire [DATA_WIDTH-1:0] data_out;
 
 
-    //================================================
-    // RESET
-    //================================================
-    #10;
-    ARST = 1'b1;
+    //==================================================
+    // CLOCK
+    //==================================================
+    always #5 ACLK = ~ACLK;
 
 
-    //================================================
-    // NORMAL SINGLE-BEAT WRITE
-    //================================================
+    //==================================================
+    // AXI SLAVE
+    //==================================================
+    AXI_SLAVE #(
+        .ADDRESS_WIDTH(ADDRESS_WIDTH),
+        .DATA_WIDTH(DATA_WIDTH),
+        .BURST_LENGTH(BURST_LENGTH),
+        .ID_WIDTH(ID_WIDTH),
+        .BURST_TYPE(BURST_TYPE)
+    ) axi_slave (
 
-    #5;
+        .ACLK(ACLK),
+        .ARST(ARST),
 
-    AWADDR  = 8'b0000_0001;
-    AWLEN   = 3'b000;       // 1 beat
-    AWBURST = 2'b01;        // INCR
-    AWVALID = 1'b1;
-    AWID    = 2'b01;
+        // AW
+        .AWADDR(AWADDR),
+        .AWLEN(AWLEN),
+        .AWBURST(AWBURST),
+        .AWVALID(AWVALID),
+        .AWID(AWID),
+        .AWREADY(AWREADY),
 
-    // Wait for AW handshake
-    #5;
+        // W
+        .WDATA(WDATA),
+        .WLAST(WLAST),
+        .WVALID(WVALID),
+        .WREADY(WREADY),
 
-    AWVALID = 1'b0;
+        // B
+        .BID(BID),
+        .BRESP(BRESP),
+        .BVALID(BVALID),
+        .BREADY(BREADY),
 
-    // Write data
-    WDATA  = 8'b0000_0101;
-    WVALID = 1'b1;
-    WLAST  = 1'b1;
+        // AR
+        .ARADDR(ARADDR),
+        .ARID(ARID),
+        .ARBURST(ARBURST),
+        .ARLEN(ARLEN),
+        .ARVALID(ARVALID),
+        .ARREADY(ARREADY),
 
-    // Write response ready
-    BREADY = 1'b1;
+        // R
+        .RDATA(RDATA),
+        .RID(RID),
+        .RRESP(RRESP),
+        .RLAST(RLAST),
+        .RVALID(RVALID),
+        .RREADY(RREADY),
 
-    // Wait for SRAM operation
-    #20;
+        // Controller
+        .req(req),
+        .rw(rw),
+        .clk(clk),
+        .bmode(bmode),
+        .abort(abort),
+        .burst_len(burst_len),
+        .burst_type(burst_type),
+        .addr(addr),
+        .data_in(data_in),
 
-    // End write transaction
-    WVALID = 1'b0;
-    WLAST  = 1'b0;
-    BREADY = 1'b0;
+        .done(done),
+        .op_complete(op_complete),
+        .busy(busy),
+        .data_out(data_out),
+        .data_valid(data_valid)
+    );
 
 
-    //================================================
-    // NORMAL SINGLE-BEAT READ
-    //================================================
+    //==================================================
+    // TOP MODULE
+    //==================================================
+    top_module #(
+        .ADDRESS_WIDTH(ADDRESS_WIDTH),
+        .DATA_WIDTH(DATA_WIDTH)
+    ) top (
 
-    #10;
+        .req(req),
+        .rw(rw),
+        .clk(ACLK),
+        .rst(ARST),
+        .rst2(ARST),
 
-    ARADDR  = 8'b0000_0001;
-    ARLEN   = 3'b000;       // 1 beat
-    ARBURST = 2'b01;        // INCR
-    ARID    = 2'b01;
-    ARVALID = 1'b1;
+        .bmode(bmode),
+        .abort(abort),
 
-    // Wait for AR handshake
-    #10;
+        .burst_len(burst_len),
+        .burst_type(burst_type),
 
-    ARVALID = 1'b0;
+        .addr(addr),
 
-    // Master ready to accept read data
-    RREADY = 1'b1;
+        .done(done),
+        .op_complete(op_complete),
+        .busy(busy),
+        .data_valid(data_valid),
 
-    // Wait for SRAM read + R response
-    #20;
+        .data_in(data_in),
+        .data_out(data_out),
 
-    // End read transaction
-    RREADY = 1'b0;
+        .clk2(ACLK),
+        .req2(1'b0),
+        .addr2(8'b0),
 
-    #20;
+        .rdata2(),
+        .done2(),
+        .busy2()
+    );
 
-    $finish;
 
-end
+    //==================================================
+    // TEST
+    //==================================================
+    initial begin
+
+        //================================================
+        // INITIAL VALUES
+        //================================================
+
+        ACLK = 0;
+        ARST = 0;
+
+        AWADDR  = 0;
+        AWLEN   = 0;
+        AWBURST = 0;
+        AWVALID = 0;
+        AWID    = 0;
+
+        WDATA   = 0;
+        WLAST   = 0;
+        WVALID  = 0;
+
+        BREADY  = 0;
+
+        ARADDR  = 0;
+        ARID    = 0;
+        ARBURST = 0;
+        ARLEN   = 0;
+        ARVALID = 0;
+
+        RREADY  = 0;
+
+
+        //================================================
+        // RESET
+        //================================================
+
+        #20;
+        ARST = 1;
+
+        #10;
+
+
+        //================================================
+        // NORMAL WRITE 1
+        // 20 = A1
+        //================================================
+
+        AWADDR  = 8'h20;
+        AWLEN   = 4'd0;
+        AWBURST = 2'b01;
+        AWID    = 2'b00;
+        AWVALID = 1'b1;
+
+        #10;
+        AWVALID = 1'b0;
+
+        WDATA  = 8'hA1;
+        WLAST  = 1'b1;
+        WVALID = 1'b1;
+
+        #10;
+        WVALID = 1'b0;
+
+        #30;
+
+
+        //================================================
+        // NORMAL WRITE 2
+        // 24 = A2
+        //================================================
+
+        AWADDR  = 8'h24;
+        AWLEN   = 4'd0;
+        AWBURST = 2'b01;
+        AWID    = 2'b01;
+        AWVALID = 1'b1;
+
+        #10;
+        AWVALID = 1'b0;
+
+        WDATA  = 8'hA2;
+        WLAST  = 1'b1;
+        WVALID = 1'b1;
+
+        #10;
+        WVALID = 1'b0;
+
+        #30;
+
+
+        //================================================
+        // NORMAL WRITE 3
+        // 28 = A3
+        //================================================
+
+        AWADDR  = 8'h28;
+        AWLEN   = 4'd0;
+        AWBURST = 2'b01;
+        AWID    = 2'b10;
+        AWVALID = 1'b1;
+
+        #10;
+        AWVALID = 1'b0;
+
+        WDATA  = 8'hA3;
+        WLAST  = 1'b1;
+        WVALID = 1'b1;
+
+        #10;
+        WVALID = 1'b0;
+
+        #30;
+
+
+        //================================================
+        // FINISH
+        //================================================
+
+        #50;
+
+        $display("========================================");
+        $display("ALL THREE NORMAL WRITES COMPLETE");
+        $display("========================================");
+
+        $finish;
+
+    end
 
 endmodule

@@ -1,282 +1,232 @@
 `timescale 1ns / 1ps
 
 module AXI_SLAVE #(parameter ADDRESS_WIDTH = 8, parameter DATA_WIDTH = 8,
-parameter BURST_LENGTH = 4)(
+parameter BURST_LENGTH = 4,parameter ID_WIDTH      = 2,
+parameter BURST_TYPE    = 2)(
     input ACLK,
     input ARST,
     //system config
     input wire [ADDRESS_WIDTH-1:0]AWADDR,//write address
     input wire [BURST_LENGTH -1:0]AWLEN,//burst length
-    input wire [1:0]AWBURST,//burst type only FIXED and INCR
+    input wire [BURST_TYPE -1 :0]AWBURST,//burst type only FIXED and INCR
     input wire AWVALID,//from master
-    input wire [1:0]AWID,//transaction ID
-    output reg AWREADY,//output of slave
+    input wire [ID_WIDTH -1:0]AWID,//transaction ID
+    output AWREADY,//output of slave
         //AW-Write address channel
     input wire [DATA_WIDTH-1:0]WDATA,//actual payload
     input wire WLAST,//last burst transaction
     input wire WVALID,//from master
-    output reg WREADY,// output of slave
-    output wr_en,
+    output wire WREADY,// output of slave
+   
         //W- Write data channel
-    output reg [1:0]BID,//transaction ID
-    output reg BRESP,//status of write
+    output reg [ID_WIDTH-1:0]BID,//transaction ID
+    output reg [1:0]BRESP,//status of write
     output reg BVALID,//from slave
     input wire BREADY,//from master
         //B- Write response channel
     input wire [ADDRESS_WIDTH-1:0] ARADDR,//address bus
-    input wire [1:0] ARID,//transaction ID
-    input wire [1:0]ARBURST,//burst type
+    input wire [ID_WIDTH-1:0] ARID,//transaction ID
+    input wire [BURST_TYPE -1:0]ARBURST,//burst type
     input wire [BURST_LENGTH-1:0] ARLEN, //read burst length
     input wire ARVALID,//from master
     output reg ARREADY,//from slave
         //AR- Read address Channel
     output reg [DATA_WIDTH -1:0]RDATA,//actual payload
-    output reg RRESP,//read response
+    output wire [ID_WIDTH-1:0] RID,//transaction ID
+    output reg [1:0]RRESP,//read response
     output reg RLAST,//last transaction
     output reg RVALID,//from slave
     input wire RREADY,//from master
         //R- read data channel
-    //adapter
-    output reg [ADDRESS_WIDTH-1:0] addr,
-    inout wire [DATA_WIDTH-1:0]data,
-    output reg req,bmode,abort,rw,
-    output reg [BURST_LENGTH-1:0] burst_len,
-    input done,busy
-        //adapter
-    );
-
-        //internal registers
-            
-            reg [BURST_LENGTH -1:0]  burst_len_reg;
-            reg [1:0] burst_mode_reg;
-            reg [2:0]state, next_state;  
-            reg [1:0] id_reg;
-            reg priority_rr;  
-        //internal registers
-
-        //burst modes
-            localparam FIXED = 2'b00;
-            localparam INCR = 2'b01;
-        //burst modes
         
-        //states  
-           localparam IDLE = 3'b000;
-           localparam WRITE_CAPTURE = 3'b001;
-           localparam WRITE_EXECUTE = 3'b010;
-           localparam WRITE_RESPONSE = 3'b011;
-           localparam READ_CAPTURE = 3'b100;
-           localparam READ_EXECUTE = 3'b101;
-           localparam READ_DATA = 3'b110;
-        //states
+        //controller channels
+            output wire req,rw,clk,abort,
+            output wire bmode,
+            output wire [3:0]burst_len,
+            output wire [1:0]burst_type,
+            output wire [ADDRESS_WIDTH-1:0]addr,
+            output wire [DATA_WIDTH-1:0]data_in,
+            input wire done,op_complete,
+            input wire busy,
+            input wire [DATA_WIDTH-1:0]data_out,
+            input wire data_valid
+        //controller channels
 
-            assign data = (state == WRITE_EXECUTE)? WDATA: 'hz;
-            
-            //state register
-                always @(posedge ACLK or negedge ARST)
-                begin
-                   
-                
-                    // SRAM controller interface
-                   
-                    
-                    if(!ARST)
-                    begin
-                         // AXI outputs
-                        WREADY = 1'b0;
-                        BVALID = 1'b0;
-                        RVALID = 1'b0;
-                        RRESP  = 1'b0;
-                        RLAST  = 1'b0;
-                        RDATA  = 1'b0;
-                        BID    = 1'b0;
-                        BRESP  = 1'b0;
-                    
-                        // SRAM controller interface
-                        req    = 1'b0;
-                        rw     = 1'b0;
-                        bmode  = 1'b0;
-                        abort  = 1'b0;
-                        
-                        
-                        burst_len_reg <= 1'b0;
-                        priority_rr <= 1'b1;//initial priority set to WRITE;
-                        state <= IDLE;
-                    end
-  
-                    else
-                    
-                        begin 
-                         state <= next_state; 
-                             if(AWREADY && AWVALID) //round robin arbiter
-                                priority_rr <= 1'b0; //round robin arbiter
-                             else if(ARVALID && ARREADY) //round robin arbiter
-                                priority_rr <= 1'b1; //round robin arbiter
-                             
-                             if(AWREADY && AWVALID)//initial handshake
-                                begin
-                                     addr <= AWADDR;
-                                     burst_len <= AWLEN;
-                                     burst_len_reg <= AWLEN;
-                                     if(AWLEN != 0)
-                                         bmode <= 1'b1;
-                                    else
-                                    begin
-                                         bmode <= 1'b0;
-                                        
-                                        end
-                                end
-
-                             if(ARREADY && ARVALID)//initial handshake
-                                begin
-                                     addr <= ARADDR;
-                                     burst_len <= ARLEN;
-                                     burst_len_reg <= ARLEN;
-                                     if(ARLEN != 0)
-                                         bmode <= 1'b1;
-                                    else
-                                    begin
-                                         bmode <= 1'b0;
-                                    
-                                        end
-                                end
-
-                             if(state == WRITE_CAPTURE)
-                             begin
-                                 AWREADY <= 1'b0;
-                               
-                                end
-
-                             if(state == READ_CAPTURE)
-                                 ARREADY <= 1'b0;
-                            
-                        end
-                        
-                end
-            //state register
-
-            //round robin arbiter
-            
-             always @(*)
-            begin
-                 AWREADY = 1'b0;
-                 ARREADY = 1'b0;
-                  if (AWVALID && ARVALID) begin
-                         if (priority_rr)
-                        begin
-                             AWREADY = 1'b1;   // WRITE wins
-                        end
-                        else
-                        begin
-                             ARREADY = 1'b1;   // READ wins
-                            end
-                    end
-                 else if (AWVALID) begin//only write
-                             AWREADY = 1'b1;
-                                end
-                     // Only READ
-                 else if (ARVALID) begin
-                             ARREADY = 1'b1;
-                                end
-            end
-            //round robin arbiter
-               
-            //next_state_logic
-             always @(*)
-                begin
-               
-                     case(state)
-                    
-                         IDLE : begin    //0
-                                 if(AWVALID && AWREADY)
-                                 next_state = WRITE_CAPTURE;
-                                 else if(ARVALID && ARREADY)
-                                 next_state = READ_CAPTURE;
-                                 else
-                                     next_state = IDLE;
-                                end
-                               
-                         WRITE_CAPTURE: begin //1
-                                            if(WVALID && WREADY)
-                                            next_state = WRITE_EXECUTE;
-                                        end
-
-                         WRITE_EXECUTE : begin //2
-                                             
-                                             next_state = WRITE_RESPONSE;
-                                            end
-                        
-                         WRITE_RESPONSE: begin //3
-                                             if (BVALID && BREADY)
-                                             next_state = IDLE;
-                                        end
-
-                          READ_CAPTURE: begin //4
-                                       
-                                             next_state = READ_EXECUTE;
-                                        end
-
-                          READ_EXECUTE : begin //5
-                                           
-                                             next_state = READ_DATA;
-                                        end
-
-                          READ_DATA : begin //6
-                                             if(RVALID && RREADY)
-                                                 next_state = IDLE;
-                                        end
-
-                         default : next_state = IDLE;
-                     endcase
-                end
-            //next_state_logic
-            
-            //output
-             always @(*)
-                begin
-                      WREADY = 1'b0;
-                      BVALID = 1'b0;
-                      RVALID = 1'b0;
-                     case(state)
-                         IDLE : begin
-                             rw = 1'b0;
-                             req = 1'b0;
-                           
-                        end
-
-                         WRITE_CAPTURE: begin
-                             WREADY = 1'b1;
-                             rw = 1'b1;
-                             req = 1'b1;
-                             
-                            
-                        end
-
-                         WRITE_EXECUTE: begin
-                             
-                        end
-
-                         WRITE_RESPONSE: begin
-                             
-                             BVALID = 1'b1;
-                            
-                           
-                        end
-
-                         READ_CAPTURE: begin
-                              req = 1'b1;                  
-                              rw = 1'b0;
-                        end
-
-                         READ_EXECUTE: begin
-                            
-                        end
-
-                         READ_DATA: begin
-                             RVALID = 1'b1;
-                        end
-                     endcase
-                end
-            //output
-            
+    );
+    localparam AW_FIFO_WIDTH = ADDRESS_WIDTH + BURST_LENGTH + BURST_TYPE + ID_WIDTH;
+    localparam W_FIFO_WIDTH  = DATA_WIDTH  + 1;
+    localparam AR_FIFO_WIDTH = ADDRESS_WIDTH + BURST_LENGTH + BURST_TYPE + ID_WIDTH;
+    localparam R_FIFO_WIDTH  = DATA_WIDTH + 2 + ID_WIDTH + 1;
+    localparam B_FIFO_WIDTH  = 2 + ID_WIDTH;
     
+    //awfifo
+        wire aw_rd_en_axi,aw_wd_en_axi;
+        wire aw_fifo_full,aw_fifo_empty;
+        wire [AW_FIFO_WIDTH-1:0] aw_fifo_out;
+        fifo #(
+        .DATA_WIDTH(AW_FIFO_WIDTH)
+        )aw(
+        .clk(ACLK),
+        .rst(ARST),
+        .data_in({AWADDR,AWLEN,AWBURST,AWID}),
+        .wr_en(aw_wd_en_axi),
+        .rd_en(aw_rd_en_axi),
+        .full(aw_fifo_full),
+        .empty(aw_fifo_empty),
+        .data_out(aw_fifo_out)
+        );
+   //awfifo
+   
+   //wfifo
+        wire w_rd_en_axi,w_wd_en_axi;
+        wire w_fifo_full,w_fifo_empty;
+        wire [W_FIFO_WIDTH-1:0] w_fifo_out;    
+        fifo #(
+        .DATA_WIDTH(W_FIFO_WIDTH)
+        )w(
+        .clk(ACLK),
+        .rst(ARST),
+        .data_in({WDATA,WLAST}),
+        .wr_en(w_wd_en_axi),
+        .rd_en(w_rd_en_axi),
+        .full(w_fifo_full),
+        .empty(w_fifo_empty),
+        .data_out(w_fifo_out)
+        );
+   //wfifo
+   
+   //bfifo
+    
+        wire b_rd_en_axi,b_wd_en_axi;
+        wire b_fifo_full,b_fifo_empty;
+        wire [B_FIFO_WIDTH-1:0] b_fifo_out;    
+        fifo #(
+        .DATA_WIDTH(B_FIFO_WIDTH)
+        )b(
+        .clk(ACLK),
+        .rst(ARST),
+        .data_in({BRESP,BID}),
+        .wr_en(b_wd_en_axi),
+        .rd_en(b_rd_en_axi),
+        .full(b_fifo_full),
+        .empty(b_fifo_empty),
+        .data_out(b_fifo_out)
+        );
+   
+   //bfifo
+        
+   //arfifo
+        wire ar_rd_en_axi,ar_wd_en_axi;
+        wire ar_fifo_full,ar_fifo_empty;
+        wire [AR_FIFO_WIDTH-1:0] ar_fifo_out;    
+        fifo #(
+        .DATA_WIDTH(AR_FIFO_WIDTH)
+        )ar(
+        .clk(ACLK),
+        .rst(ARST),
+        .data_in({ARADDR,ARLEN,ARBURST,ARID}),
+        .wr_en(ar_wd_en_axi),
+        .rd_en(ar_rd_en_axi),
+        .full(ar_fifo_full),
+        .empty(ar_fifo_empty),
+        .data_out(ar_fifo_out)
+        );
+   //arfifo
+   
+   //rfifo
+        wire r_rd_en_axi,r_wd_en_axi;
+        wire r_fifo_full,r_fifo_empty;
+        wire [R_FIFO_WIDTH-1:0] r_fifo_out;    
+        fifo #(
+        .DATA_WIDTH(R_FIFO_WIDTH)
+        )r(
+        .clk(ACLK),
+        .rst(ARST),
+        .data_in({RDATA,RRESP,RID,RLAST}),
+        .wr_en(r_wd_en_axi),
+        .rd_en(r_rd_en_axi),
+        .full(r_fifo_full),
+        .empty(r_fifo_empty),
+        .data_out(r_fifo_out)
+        );
+   //rfifo
+   
+   //arbiter
+   wire read_req = !busy && !ar_fifo_empty;
+   wire write_req = !busy && !aw_fifo_empty && !w_fifo_empty;
+   wire wg,rg;
+   
+   arbiter art(
+   .clk(ACLK),
+   .rst(ARST),
+   .a(read_req),
+   .b(write_req),
+   .wg(wg),
+   .rg(rg)
+   );
+   assign rw = wg ? 1'b1:1'b0;
+   assign req = wg | rg;
+   assign addr = wg ? aw_fifo_out[AW_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :(rg ? ar_fifo_out[AR_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :'hz);
+   assign bmode = wg ?
+               (aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 0) :
+               rg ?
+               (ar_fifo_out[AR_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 0) :
+               1'b0;
+   assign burst_len = wg ?
+                   aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] :
+                   rg ?
+                   ar_fifo_out[AR_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] :
+                   4'b0;
+   assign burst_type = wg ?
+                    aw_fifo_out[ID_WIDTH + BURST_TYPE - 1 -: BURST_TYPE] :
+                    rg ?
+                    ar_fifo_out[ID_WIDTH + BURST_TYPE - 1 -: BURST_TYPE] :
+                    2'b0;
+   
+   //arbiter
+   
+   //internal registers
+    reg [ID_WIDTH-1:0]awid,arid;
+    reg bmode_reg;
+    
+   //internal registers
+   
+   //awfifo logic
+    assign AWREADY = !aw_fifo_full;
+    assign aw_wd_en_axi = AWREADY && AWVALID;
+    assign aw_rd_en_axi = wg;
+   //awfifo logic
+   
+   //wfifo logic
+   assign WREADY = !w_fifo_full;
+   assign w_wd_en_axi = WREADY && WVALID;
+   assign w_rd_en_axi = wg ;
+   assign data_in = wg? w_fifo_out[W_FIFO_WIDTH -1 -:DATA_WIDTH ]:'hz;
+   //wfifo logic
+   
+   
+   //memory and internal register operations
+    always @(posedge ACLK or negedge ARST) begin
+    if (!ARST) begin
+        awid <= 1'b0;
+        arid  <= 1'b0;
+        
+    end
+    else begin
+        if (wg)
+        begin
+            awid <= aw_fifo_out[ID_WIDTH-1 -: ID_WIDTH];
+           
+           end 
+
+        if (rg)
+        begin
+            arid <= ar_fifo_out[ID_WIDTH-1 -: ID_WIDTH];
+           
+            end
+        end
+       
+        
+    end
+   //memory and internal register operations
 endmodule

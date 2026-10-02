@@ -1,22 +1,23 @@
 `timescale 1ns / 1ps
 
-module controller #(parameter DATA_WIDTH = 8, parameter ADDRESS_WIDTH = 8)(
+module controller #(parameter DATA_WIDTH = 8, parameter ADDRESS_WIDTH = 8,parameter BURST_LENGTH = 4,
+parameter BURST_TYPE    = 2)(
 input wire req,rw,clk,rst,bmode,abort,ram_stat,
-input [3:0]burst_len,
-input [1:0]burst_type,//INCR or FIXED
+input [BURST_LENGTH-1:0]burst_len,
+input [BURST_TYPE-1:0]burst_type,//INCR or FIXED
 output wire [DATA_WIDTH-1:0]data_in_ram,
 input wire [DATA_WIDTH-1:0]data_out_ram,
 input wire [ADDRESS_WIDTH-1:0]addr,
 output wire [ADDRESS_WIDTH-1:0]sram_addr,
 output reg wre,oe,ce,tri_o,
-output reg done,
+output reg done,op_complete,data_valid,
 output busy,
 input wire [DATA_WIDTH-1:0]data_in,
 output wire [DATA_WIDTH-1:0]data_out
     );
     //internal registers
     reg [ADDRESS_WIDTH-1:0]addr_reg;
-    reg [DATA_WIDTH-1:0] data_reg;
+    reg [DATA_WIDTH-1:0] data_reg,rdata_reg;
     reg [1:0]try;
     reg rw_reg,bmode_reg;
     reg [3:0]state,next_state;
@@ -40,23 +41,14 @@ output wire [DATA_WIDTH-1:0]data_out
     //cont assignments
     assign data_in_ram = data_reg;
     assign busy = (state == IDLE || state == PRE_IDLE)? 1'b0:1'b1;
-    assign sram_addr = addr_reg;
-    assign data_out =  data_out_ram;
+    assign sram_addr = !ram_stat && !(state == IDLE || state == PRE_IDLE)? addr_reg:'hz ;
+    assign data_out =  rdata_reg;
+    
     //cont assignments
     //single port sram
 
     //single port sram
-spsram dut (
-    .clk(clk),
-    .wre(wre),
-    .oe(oe),
-    .ce(ce),
-    .rst(rst),
-    .addr(sram_addr),
-    .wdata(data_in_ram),
-    .rdata(data_out_ram),
-    .status(ram_stat)
-);
+
     //state-register
     always @(posedge clk or negedge rst)
         begin
@@ -72,12 +64,17 @@ spsram dut (
                     bmode_reg <= 0;
                     burst_len_reg <= 0;
                     burst_type_reg <= 0;
+                    op_complete <= 1'b0;
+                    rdata_reg <= 0;
+                    data_valid <= 1'b0;
                 end
              else
              begin
+                op_complete <= 1'b0;
                 state <= next_state;
                 done <= 0;
-
+                rdata_reg <= 0;
+                data_valid <= 0;
                     if(state == IDLE && req)
                         begin
                             addr_reg <= addr;
@@ -86,7 +83,7 @@ spsram dut (
                             bmode_reg <= bmode;
                             burst_len_reg <= burst_len;
                             burst_count <= 1'b0;
-                            
+                            data_valid <= 0;
                             burst_type_reg <= burst_type;
                             
                             if(rw)
@@ -118,7 +115,7 @@ spsram dut (
                     else if(state == WRITE)
                             begin
                             data_reg <= data_in;
-                            
+                            if(ram_stat)
                             done <= 1'b1;
                             if(bmode_reg)
                                     begin
@@ -137,8 +134,28 @@ spsram dut (
                    else if(state == READ)
                         begin
                                 if(ram_stat)
+                                begin
                                  done <= 1'b1;
+                                 rdata_reg <= data_out_ram;
+                                 end
                         end
+                   if (state == WRITE && ram_stat) begin
+                        if (!bmode_reg || burst_count == burst_len_reg - 1)
+                            op_complete <= 1'b1;
+                        end
+
+                    else if (state == READ && ram_stat) begin
+                        if (!bmode_reg || burst_count == burst_len_reg - 1)
+                            op_complete <= 1'b1;
+                        end
+                    else if (state == BE)
+                    begin
+                        if(bmode_reg && rw_reg)
+                            data_valid <= 1'b1;
+                        
+                        else
+                            data_valid <= 0;
+                    end
 
 
                 end
