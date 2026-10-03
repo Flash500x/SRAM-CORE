@@ -33,7 +33,7 @@ reg [ADDRESS_WIDTH-1:0] addr2;
 wire [DATA_WIDTH-1:0] rdata2;
 wire done2;
 wire busy2;
-
+wire rdata_valid;
 
 // ============================================================
 // DUT
@@ -68,7 +68,7 @@ top_module #(
     .req2(req2),
     .addr2(addr2),
     .op_complete(op_complete),
-    
+    .rdata_valid(rdata_valid),
     .rdata2(rdata2),
     .done2(done2),
     .busy2(busy2)

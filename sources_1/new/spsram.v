@@ -4,7 +4,7 @@ module spsram #(parameter DATA_WIDTH = 8,parameter ADDRESS_WIDTH = 8
 input wire  clk,wre,oe,ce,rst,rst2,
 input wire [ADDRESS_WIDTH-1:0]addr,
 input wire [DATA_WIDTH-1:0]wdata, 
-output wire [DATA_WIDTH-1:0]rdata,
+output reg [DATA_WIDTH-1:0]rdata,
 output reg status,
 output reg status2,
 input wire clk2,oe2,
@@ -38,7 +38,7 @@ output wire [DATA_WIDTH-1:0] rdata2
                     end
                 else if(oe && !wre && ce)
                     begin
-                        TEMPDATA <= mem[addr];
+                        rdata <= mem[addr];
                         status <= 1'b1;
                     end
             end
@@ -55,11 +55,11 @@ output wire [DATA_WIDTH-1:0] rdata2
             status2 <= 0;
                 if(oe2)
                 begin
-                    TEMPDATA2 <= mem[addr2];
+                    TEMPDATA2<= mem[addr2];
                     status2 <= 1'b1;
                     end
             end
     end
     assign rdata2 = oe2 ? TEMPDATA2 : 'hz;
-    assign rdata = TEMPDATA;
+    
 endmodule

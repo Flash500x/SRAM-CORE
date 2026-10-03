@@ -30,7 +30,8 @@ module top_module #(
     output wire [DATA_WIDTH-1:0] rdata2,
 
     output wire done2,
-    output wire busy2
+    output wire busy2,
+    output wire rdata_valid
 );
 
 wire wre;
@@ -73,7 +74,8 @@ controller #(
     .data_out(data_out),
     .done(done),
     .op_complete(op_complete),
-    .data_valid(data_valid)
+    .data_valid(data_valid),
+    .rdata_valid(rdata_valid)
 );
 
 rd_fsm #(

@@ -47,7 +47,7 @@ module arbiter(
             end
         end
     end
-    always @(negedge a or negedge b)
+    always @(!a or !b)
     begin
         wg <= 0;
         rg <= 0;

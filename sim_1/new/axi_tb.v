@@ -77,7 +77,7 @@ module axi_tb;
     wire done;
     wire op_complete;
     wire busy;
-    wire data_valid;
+    wire data_valid,rdata_valid;
     wire [DATA_WIDTH-1:0] data_out;
 
 
@@ -152,7 +152,8 @@ module axi_tb;
         .op_complete(op_complete),
         .busy(busy),
         .data_out(data_out),
-        .data_valid(data_valid)
+        .data_valid(data_valid),
+        .rdata_valid(rdata_valid)
     );
 
 
@@ -177,7 +178,7 @@ module axi_tb;
         .burst_type(burst_type),
 
         .addr(addr),
-
+        .rdata_valid(rdata_valid),
         .done(done),
         .op_complete(op_complete),
         .busy(busy),
@@ -259,7 +260,7 @@ module axi_tb;
     WVALID  = 1'b1;
 
     #10;
-
+    BREADY = 1'b1;
 
     //================================================
     // WRITE 2
@@ -278,7 +279,7 @@ module axi_tb;
     WVALID  = 1'b1;
 
     #10;
-
+    
 
     //================================================
     // WRITE 3
@@ -297,7 +298,7 @@ module axi_tb;
     WVALID  = 1'b1;
 
     #10;
-
+    
 
     //================================================
     // END SINGLE WRITES
@@ -309,9 +310,9 @@ module axi_tb;
 
     AWADDR  = 8'h00;
     WDATA   = 8'h00;
-
+    
     #50;
-
+    BREADY = 1'b0;
 
     //================================================
     // BURST WRITE
@@ -370,9 +371,9 @@ module axi_tb;
     WDATA  = 8'hB4;
     WLAST  = 1'b1;
     WVALID = 1'b1;
-
+    BREADY = 1'b1;
     #20;
-
+    
 
     //================================================
     // END BURST
@@ -381,9 +382,46 @@ module axi_tb;
     AWVALID = 1'b0;
     WVALID  = 1'b0;
     WLAST   = 1'b0;
-
+    
     AWADDR  = 8'h00;
     WDATA   = 8'h00;
+    #200;
+    
+    //================================================
+    // READ 3
+    // ADDR = 0x03
+    //================================================
+    
+    ARADDR  = 8'h03;
+    ARLEN   = 4'd0;
+    ARBURST = 2'b01;
+    ARID    = 2'b10;
+    ARVALID = 1'b1;
+    BREADY = 1'b0;
+    #10;
+    ARVALID = 1'b0;
+    #100;
+     //================================================
+    // BURST READ
+    // START ADDRESS = 0x10
+    // 4 BEATS
+    // EXPECTED:
+    // 0x10 = B1
+    // 0x11 = B2
+    // 0x12 = B3
+    // 0x13 = B4
+    //================================================
+
+    ARADDR  = 8'h10;
+    ARLEN   = 4'd3;       // 4 beats
+    ARBURST = 2'b01;      // INCR
+    ARID    = 2'b11;
+    ARVALID = 1'b1;
+    RREADY  = 1'b1;
+
+    #10;
+
+    ARVALID = 1'b0;
 
     #200;
 

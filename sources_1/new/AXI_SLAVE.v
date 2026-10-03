@@ -29,13 +29,13 @@ parameter BURST_TYPE    = 2)(
     input wire [BURST_TYPE -1:0]ARBURST,//burst type
     input wire [BURST_LENGTH-1:0] ARLEN, //read burst length
     input wire ARVALID,//from master
-    output reg ARREADY,//from slave
+    output wire ARREADY,//from slave
         //AR- Read address Channel
-    output reg [DATA_WIDTH -1:0]RDATA,//actual payload
+    output wire [DATA_WIDTH -1:0]RDATA,//actual payload
     output wire [ID_WIDTH-1:0] RID,//transaction ID
-    output reg [1:0]RRESP,//read response
-    output reg RLAST,//last transaction
-    output reg RVALID,//from slave
+    output wire [1:0]RRESP,//read response
+    output wire RLAST,//last transaction
+    output wire RVALID,//from slave
     input wire RREADY,//from master
         //R- read data channel
         
@@ -49,7 +49,7 @@ parameter BURST_TYPE    = 2)(
             input wire done,op_complete,
             input wire busy,
             input wire [DATA_WIDTH-1:0]data_out,
-            input wire data_valid
+            input wire data_valid,rdata_valid
         //controller channels
 
     );
@@ -96,7 +96,7 @@ parameter BURST_TYPE    = 2)(
    //wfifo
    
    //bfifo
-    
+        wire [ID_WIDTH-1:0] a_wid; 
         wire b_rd_en_axi,b_wd_en_axi;
         wire b_fifo_full,b_fifo_empty;
         wire [B_FIFO_WIDTH-1:0] b_fifo_out;    
@@ -105,7 +105,7 @@ parameter BURST_TYPE    = 2)(
         )b(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({BRESP,BID}),
+        .data_in({BRESP,a_wid}),
         .wr_en(b_wd_en_axi),
         .rd_en(b_rd_en_axi),
         .full(b_fifo_full),
@@ -124,7 +124,7 @@ parameter BURST_TYPE    = 2)(
         )ar(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({ARADDR,ARLEN,ARBURST,ARID}),
+        .data_in({ARADDR,ARLEN+4'd1,ARBURST,ARID}),
         .wr_en(ar_wd_en_axi),
         .rd_en(ar_rd_en_axi),
         .full(ar_fifo_full),
@@ -136,13 +136,16 @@ parameter BURST_TYPE    = 2)(
    //rfifo
         wire r_rd_en_axi,r_wd_en_axi;
         wire r_fifo_full,r_fifo_empty;
-        wire [R_FIFO_WIDTH-1:0] r_fifo_out;    
+        wire [R_FIFO_WIDTH-1:0] r_fifo_out;
+        wire [1:0] rresp;
+        wire [ID_WIDTH-1:0] a_rid;
+        assign rresp = 2'b00;    
         fifo #(
         .DATA_WIDTH(R_FIFO_WIDTH)
         )r(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({RDATA,RRESP,RID,RLAST}),
+        .data_in({data_out,rresp,a_rid,op_complete}),
         .wr_en(r_wd_en_axi),
         .rd_en(r_rd_en_axi),
         .full(r_fifo_full),
@@ -202,16 +205,34 @@ parameter BURST_TYPE    = 2)(
    assign w_wd_en_axi = WREADY && WVALID;
    assign w_rd_en_axi = wg | data_valid;
    assign data_in = wg | data_valid? w_fifo_out[W_FIFO_WIDTH -1 -:DATA_WIDTH ]:'hz;
+   
    //wfifo logic
    
    //bfifo logic
-    assign b_wd_en_axi = op_complete && !b_fifo_full;
+    assign b_wd_en_axi = op_complete && !b_fifo_full ;
     assign b_rd_en_axi = BVALID && BREADY;
     assign BVALID      = !b_fifo_empty;
-    assign BID = awid;
+    assign BID   = b_fifo_out[ID_WIDTH-1:0];
     assign BRESP = 2'b00;
+    assign a_wid = awid;
    //bfifo logic
    
+   //arfifo logic
+   assign ar_wd_en_axi = ARREADY && ARVALID;
+   assign ar_rd_en_axi = rg;
+   assign ARREADY = !ar_fifo_full;
+   //arfifo logic
+   
+   //rfifo logic
+   assign RVALID = !r_fifo_empty;
+   assign r_rd_en_axi = RVALID && RREADY;
+   assign r_wd_en_axi = rdata_valid && !r_fifo_full ;
+   assign RDATA = r_fifo_out[R_FIFO_WIDTH-1 -: DATA_WIDTH];
+   assign RRESP = r_fifo_out[ID_WIDTH+1 -: 2];
+   assign RID   = r_fifo_out[ID_WIDTH:1];
+   assign RLAST = r_fifo_out[0];
+   assign a_rid = arid;
+   //rfifo logic
    
    //memory and internal register operations
     always @(posedge ACLK or negedge ARST) begin
@@ -223,8 +244,9 @@ parameter BURST_TYPE    = 2)(
     else begin
         if (wg)
         begin
-            awid <= aw_fifo_out[ID_WIDTH-1 -: ID_WIDTH];
-           
+            
+            awid <= aw_fifo_out[ID_WIDTH-1:0];
+            
            end 
 
         if (rg)
@@ -232,6 +254,10 @@ parameter BURST_TYPE    = 2)(
             arid <= ar_fifo_out[ID_WIDTH-1 -: ID_WIDTH];
            
             end
+        if(read_req)
+            awid <= 1'b0;
+        if(write_req)
+            arid <= 1'b0;
         end
        
         
