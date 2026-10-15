@@ -2,12 +2,27 @@
 
 Parameterized Verilog RTL for a synchronous single-port SRAM controller, behavioral SRAM model, and supporting read/write finite-state machines.
 
+## Overview
+
+SRAM-CORE provides a compact, simulation-friendly SRAM subsystem intended for FPGA and prototype design exploration. It includes a primary controller, an alternate parity-aware read/write state machine, and a behavioral SRAM model for validating memory transactions before integrating an external device.
+
+### Repository languages
+
+- Verilog: 92.2%
+- SystemVerilog: 7.8%
+
+### Included modules
+
+- `controller.v`: primary controller with single-word and incrementing burst transactions.
+- `wr_rd_fsm.v`: alternate read/write FSM with parity-bit generation, parity checking, retry handling, and error reporting.
+- `spsram.v`: behavioral synchronous single-port SRAM model.
+
 The repository contains two controller implementations:
 
 - `controller.v`: primary controller with single-word and incrementing burst transactions.
 - `wr_rd_fsm.v`: alternate read/write FSM with parity-bit generation, parity checking, retry handling, and error reporting.
 
-The RTL is currently structured as a simulation and FPGA-development prototype. The behavioral SRAM model and included timing constraint must be replaced or extended for a specific external SRAM device and board.
+The RTL is currently structured as a simulation and FPGA-development prototype. The behavioral SRAM model and included timing constraint must be replaced or extended for a specific external SRAM device and board-level pinout.
 
 ## Design parameters
 
@@ -90,7 +105,7 @@ module controller #(
 - `done` is a completion pulse generated when the requested operation completes.
 - `sram_addr` increments after each completed burst word.
 
-`data_cn_in_out` is the host-side bidirectional data bus. During a write, the host drives this bus before the controller captures the write data. During a read, the controller drives the bus from the SRAM-side bus. `data_cn_ram` is the corresponding bidirectional SRAM bus.
+`data_cn_in_out` is the host-side bidirectional data bus. During a write, the host drives this bus before the controller captures the write data. During a read, the controller drives the bus from the SRAM interface and presents the data back to the host.
 
 ### State machine
 
@@ -190,7 +205,7 @@ The included XDC file defines a 100 MHz clock:
 create_clock -period 10.000 [get_ports clk]
 ```
 
-The XDC does not contain package-pin, I/O-standard, drive-strength, slew-rate, or external-SRAM timing constraints. Those constraints must be added for the target FPGA board and memory device. In particular, the bidirectional data bus requires correct top-level tri-state integration to prevent bus contention.
+The XDC does not contain package-pin, I/O-standard, drive-strength, slew-rate, or external-SRAM timing constraints. Those constraints must be added for the target FPGA board and memory device.
 
 ## Known limitations
 
