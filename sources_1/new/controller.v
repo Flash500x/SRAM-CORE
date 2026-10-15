@@ -9,7 +9,7 @@ output wire [DATA_WIDTH-1:0]data_in_ram,
 input wire [DATA_WIDTH-1:0]data_out_ram,
 input wire [ADDRESS_WIDTH-1:0]addr,
 output wire [ADDRESS_WIDTH-1:0]sram_addr,
-output reg wre,oe,ce,tri_o,
+output reg wre,oe,ce,
 output reg op_complete,data_valid,
 output busy,done,
 input wire [DATA_WIDTH-1:0]data_in,
@@ -228,7 +228,7 @@ output wire rdata_valid
                 ce = 1'b0;
                 oe = 1'b0;
                 wre = 1'b0;
-                tri_o = 1'b1;
+                
             end
 
             IDLE:
@@ -236,7 +236,7 @@ output wire rdata_valid
                 ce = 1'b0;
                 oe = 1'b0;
                 wre = 1'b0;
-                tri_o = 1'b1;
+               
             end
 
             PRE:
@@ -244,7 +244,7 @@ output wire rdata_valid
                 ce = 1'b0;
                 oe = 1'b0;
                 wre = 1'b0;
-                tri_o = 1'b1;
+               
             end
 
             WRITE:
@@ -252,7 +252,7 @@ output wire rdata_valid
                 ce = 1'b1;
                 oe = 1'b0;
                 wre = 1'b1;
-                tri_o = 1'b0;
+               
             end
 
             READ:
@@ -260,7 +260,7 @@ output wire rdata_valid
                 ce = 1'b1;
                 oe = 1'b1;
                 wre = 1'b0;
-                tri_o = 1'b1;
+               
             end
 
             BE:
@@ -268,7 +268,7 @@ output wire rdata_valid
                 ce = 1'b0;
                 oe = 1'b0;
                 wre = 1'b0;
-                tri_o = 1'b1;
+               
             end
 
         endcase

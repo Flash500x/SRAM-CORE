@@ -49,7 +49,8 @@ parameter BURST_TYPE    = 2)(
             input wire done,op_complete,
             input wire busy,
             input wire [DATA_WIDTH-1:0]data_out,
-            input wire data_valid,rdata_valid
+            input wire data_valid,rdata_valid,
+            output wire controller_clk
         //controller channels
 
     );
@@ -167,8 +168,16 @@ parameter BURST_TYPE    = 2)(
    .wg(wg),
    .rg(rg)
    );
+   wire clk_controller;
+   ICG clock(
+   .en(clk_controller),
+   .clk(ACLK),
+   .clk_out(controller_clk)
+   );
    assign rw = wg ? 1'b1:1'b0;
    assign req = wg | rg;
+   assign clk_controller = req | busy;
+   
    assign addr = wg ? aw_fifo_out[AW_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :(rg ? ar_fifo_out[AR_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :'hz);
    assign bmode = wg ?
                (aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 1) :

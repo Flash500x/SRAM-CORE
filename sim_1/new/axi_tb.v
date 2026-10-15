@@ -80,7 +80,7 @@ module axi_tb;
     wire data_valid,rdata_valid;
     wire [DATA_WIDTH-1:0] data_out;
 
-
+    realtime t;
     //==================================================
     // CLOCK
     //==================================================
@@ -208,7 +208,7 @@ module axi_tb;
     //================================================
     // INITIAL VALUES
     //================================================
-
+    t = $realtime;
     ACLK = 0;
     ARST = 0;
 
@@ -236,7 +236,7 @@ module axi_tb;
     //================================================
     // RESET
     //================================================
-
+    $display("the current time is %0t",$time);
     #20;
     ARST = 1;
 
@@ -248,7 +248,7 @@ module axi_tb;
     // ADDR = 0x01
     // DATA = A1
     //================================================
-
+    $display("the current time write 1 is %0t",$time);
     AWADDR  = 8'h01;
     AWLEN   = 4'd0;
     AWBURST = 2'b01;
@@ -261,13 +261,13 @@ module axi_tb;
 
     #10;
     BREADY = 1'b1;
-
+    
     //================================================
     // WRITE 2
     // ADDR = 0x02
     // DATA = A2
     //================================================
-
+    $display("the current time is %0t",$time);
     AWADDR  = 8'h02;
     AWLEN   = 4'd0;
     AWBURST = 2'b01;
@@ -279,14 +279,14 @@ module axi_tb;
     WVALID  = 1'b1;
 
     #10;
-    
+     $display("the current time is %0t",$time);
 
     //================================================
     // WRITE 3
     // ADDR = 0x03
     // DATA = A3
     //================================================
-
+     $display("the current time is %0t",$time);
     AWADDR  = 8'h03;
     AWLEN   = 4'd0;
     AWBURST = 2'b01;
@@ -296,10 +296,11 @@ module axi_tb;
     WDATA   = 8'hA3;
     WLAST   = 1'b1;
     WVALID  = 1'b1;
-
+    $display("the current time is %0t",$time);
     #10;
     
-
+if(done)
+    $display("the current time write 1 is %0t",$time);
     //================================================
     // END SINGLE WRITES
     //================================================
@@ -319,7 +320,7 @@ module axi_tb;
     // START ADDRESS = 0x10
     // 4 BEATS
     //================================================
-
+    $display("the current time is %0t",$time);
     AWADDR  = 8'h10;
     AWLEN   = 4'd3;       // 4 beats
     AWBURST = 2'b01;      // INCR
@@ -366,13 +367,12 @@ module axi_tb;
     // BURST BEAT 4
     // 0x13 = B4
     //================================================
-    WDATA = 0;
-    #10;
+   
     WDATA  = 8'hB4;
     WLAST  = 1'b1;
     WVALID = 1'b1;
     BREADY = 1'b1;
-    #20;
+    #30;
     
 
     //================================================
@@ -386,12 +386,12 @@ module axi_tb;
     AWADDR  = 8'h00;
     WDATA   = 8'h00;
     #200;
-    
+     $display("the current time is %0t",t);
     //================================================
     // READ 3
     // ADDR = 0x03
     //================================================
-    
+     $display("the current time is %0t",t);
     ARADDR  = 8'h03;
     ARLEN   = 4'd0;
     ARBURST = 2'b01;
@@ -400,6 +400,7 @@ module axi_tb;
     BREADY = 1'b0;
     #10;
     ARVALID = 1'b0;
+     $display("the current time is %0t",t);
     #100;
      //================================================
     // BURST READ
@@ -411,7 +412,7 @@ module axi_tb;
     // 0x12 = B3
     // 0x13 = B4
     //================================================
-
+     $display("the current time is %0t",t);
     ARADDR  = 8'h10;
     ARLEN   = 4'd3;       // 4 beats
     ARBURST = 2'b01;      // INCR
@@ -424,7 +425,7 @@ module axi_tb;
     ARVALID = 1'b0;
 
     #200;
-
+ $display("the current time is %0t",t);
 
     //================================================
     // FINISH
