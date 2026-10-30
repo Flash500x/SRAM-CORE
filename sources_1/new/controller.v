@@ -3,8 +3,8 @@
 module controller #(parameter DATA_WIDTH = 8, parameter ADDRESS_WIDTH = 8,parameter BURST_LENGTH = 4,
 parameter BURST_TYPE    = 2)(
 input wire req,rw,clk,rst,bmode,abort,ram_stat,
-input [BURST_LENGTH-1:0]burst_len,
-input [BURST_TYPE-1:0]burst_type,//INCR or FIXED
+input [BURST_LENGTH:0]burst_len,//number of beats, 1 to 16
+input [BURST_TYPE-1:0]burst_type,//FIXED, INCR or WRAP
 output wire [DATA_WIDTH-1:0]data_in_ram,
 input wire [DATA_WIDTH-1:0]data_out_ram,
 input wire [ADDRESS_WIDTH-1:0]addr,
@@ -14,7 +14,10 @@ output reg op_complete,data_valid,
 output busy,done,
 input wire [DATA_WIDTH-1:0]data_in,
 output wire [DATA_WIDTH-1:0]data_out,
-output wire rdata_valid
+output wire rdata_valid,
+input wire illegal,//burst gets SLVERR, memory is not written
+input wire w_avail,//W fifo holds the next write beat
+input wire r_ready//R fifo has space for a read beat
     );
 
     //internal registers
@@ -23,10 +26,11 @@ output wire rdata_valid
     reg [1:0]try;
     reg rw_reg,bmode_reg;
     reg [3:0]state,next_state;
-    reg [3:0]burst_len_reg;
-    reg [3:0]burst_count;
+    reg [BURST_LENGTH:0]burst_len_reg;
+    reg [BURST_LENGTH:0]burst_count;
     reg [1:0]burst_type_reg;
     reg rvalid;
+    reg illegal_reg;
 
     //local parameters
     localparam IDLE = 4'b0001;
@@ -41,17 +45,24 @@ output wire rdata_valid
     //cont assignments
     assign data_in_ram = (!data_valid)?data_reg:data_in;
     assign busy = (state == IDLE || state == PRE_IDLE)? 1'b0:1'b1;
-    assign sram_addr = !ram_stat && !(state == IDLE || state == PRE_IDLE)? addr_reg:'hz;
+    assign sram_addr = addr_reg;
     assign data_out = rdata_reg;
     assign done = ram_stat;
     assign rdata_valid = rvalid;
+
+    //hold BE until the next beat can move
+    //rvalid: a beat is being pushed this cycle, r_ready does not include it yet
+    wire be_stall = rw_reg ? !w_avail : (rvalid || !r_ready);
+    //wrap boundary: the low bits count inside the window, the high bits stay
+    wire [ADDRESS_WIDTH-1:0] wrap_mask = burst_len_reg - 1'b1;
+    wire [ADDRESS_WIDTH-1:0] wrap_addr = (addr_reg & ~wrap_mask) | ((addr_reg + 1'b1) & wrap_mask);
 
     //state-register
     always @(posedge clk or negedge rst)
     begin
         if(!rst)
         begin
-            state <= PRE_IDLE;
+            state <= IDLE;
             try <= 2'b00;
             addr_reg <= 0;
             data_reg <= 0;
@@ -67,15 +78,13 @@ output wire rdata_valid
 
             // FIX
             rvalid <= 1'b0;
+            illegal_reg <= 1'b0;
         end
         else
         begin
             op_complete <= 1'b0;
             state <= next_state;
-
-            
-
-            
+            rvalid <= 1'b0;//one pulse per read beat
             data_valid <= 0;
 
             if(state == IDLE && req)
@@ -88,40 +97,26 @@ output wire rdata_valid
                 burst_count <= 1'b0;
                 data_valid <= 0;
                 burst_type_reg <= burst_type;
+                illegal_reg <= illegal;
 
                 if(rw)
                     data_reg <= data_in;
             end
 
-            else if(state == BE)
+            else if(state == BE && !be_stall)
             begin
-                if(rw_reg && bmode_reg && burst_count < burst_len_reg -1)
-                begin
-                    burst_count <= burst_count + 1'b1;
+                burst_count <= burst_count + 1'b1;
 
-                    if(burst_type_reg == 2'b01)
-                    begin
-                        addr_reg <= addr_reg + 1'b1;
-                        data_reg <= data_in;
-                        data_valid <= 1'b1;
-                    end
-                    else
-                        addr_reg <= addr_reg;
+                if(rw_reg)
+                begin
+                    data_reg <= data_in;
+                    data_valid <= 1'b1;
                 end
 
-                else if((~rw_reg && bmode_reg) &&
-                        burst_count < burst_len_reg - 1)
-                begin
-                    burst_count <= burst_count + 1'b1;
-
-                    if(burst_type_reg == 2'b01)
-                    begin
-                        addr_reg <= addr_reg + 1'b1;
-                       
-                    end
-                    else
-                        addr_reg <= addr_reg;
-                end
+                if(!illegal_reg && burst_type_reg == 2'b01)
+                    addr_reg <= addr_reg + 1'b1;
+                else if(!illegal_reg && burst_type_reg == 2'b10)
+                    addr_reg <= wrap_addr;
             end
 
             else if(state == READ)
@@ -206,7 +201,9 @@ output wire rdata_valid
 
                 BE:
                 begin
-                    if(bmode_reg && rw_reg)
+                    if(be_stall)
+                        next_state = BE;
+                    else if(bmode_reg && rw_reg)
                         next_state = WRITE;
                     else if(bmode_reg && ~rw_reg)
                         next_state = READ;
@@ -219,8 +216,13 @@ output wire rdata_valid
     end
 
     //output logic
+    //SRAM access lasts one cycle, ram_stat ends it
     always @(*)
     begin
+        ce = 1'b0;
+        oe = 1'b0;
+        wre = 1'b0;
+
         case(state)
 
             PRE_IDLE:
@@ -249,16 +251,16 @@ output wire rdata_valid
 
             WRITE:
             begin
-                ce = 1'b1;
-                oe = 1'b0;
-                wre = 1'b1;
+                ce = !ram_stat;
+                oe = illegal_reg && !ram_stat;//read instead of write, status still answers
+                wre = !illegal_reg && !ram_stat;
                
             end
 
             READ:
             begin
-                ce = 1'b1;
-                oe = 1'b1;
+                ce = !ram_stat;
+                oe = !ram_stat;
                 wre = 1'b0;
                
             end

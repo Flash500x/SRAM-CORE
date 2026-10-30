@@ -60,7 +60,7 @@ module top_module_main #(
     wire                     ctrl_req;
     wire                     ctrl_rw;
     wire                     ctrl_bmode;
-    wire [3:0]               ctrl_burst_len;
+    wire [BURST_LENGTH:0]    ctrl_burst_len;
     wire [BURST_TYPE-1:0]    ctrl_burst_type;
     wire [ADDRESS_WIDTH-1:0] ctrl_addr;
     wire [DATA_WIDTH-1:0]    ctrl_wdata;        // AXI_SLAVE.data_in  -> controller.data_in
@@ -71,6 +71,9 @@ module top_module_main #(
     wire                     ctrl_data_valid;
     wire                     ctrl_rdata_valid;
     wire                     controller_clk;
+    wire                     ctrl_illegal;
+    wire                     ctrl_w_avail;
+    wire                     ctrl_r_ready;
 
     // ------------------------------------------------------------------
     // controller <-> SRAM port 1
@@ -151,7 +154,10 @@ module top_module_main #(
         .data_out    (ctrl_rdata),
         .data_valid  (ctrl_data_valid),
         .rdata_valid (ctrl_rdata_valid),
-        .controller_clk(controller_clk)
+        .controller_clk(controller_clk),
+        .illegal     (ctrl_illegal),
+        .w_avail     (ctrl_w_avail),
+        .r_ready     (ctrl_r_ready)
     );
 
     // ------------------------------------------------------------------
@@ -189,7 +195,10 @@ module top_module_main #(
 
         .data_in      (ctrl_wdata),
         .data_out     (ctrl_rdata),
-        .rdata_valid  (ctrl_rdata_valid)
+        .rdata_valid  (ctrl_rdata_valid),
+        .illegal      (ctrl_illegal),
+        .w_avail      (ctrl_w_avail),
+        .r_ready      (ctrl_r_ready)
     );
 
     // ------------------------------------------------------------------

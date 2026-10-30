@@ -32,7 +32,7 @@ reg [1:0] next_state;
 assign ram_addr = addr_reg;
 assign busy = (state != IDLE);
 
-assign rdata = rdata_valid ? rdata_reg : 'hz;
+assign rdata = rdata_valid ? rdata_reg : {DATA_WIDTH{1'b0}};
 
 always @(posedge clk or negedge rst) begin
     if (!rst) begin
@@ -41,7 +41,6 @@ always @(posedge clk or negedge rst) begin
         rdata_reg <= 0;
         rdata_valid <= 0;
         done <= 0;
-        oe <= 0;
     end
     else begin
         state <= next_state;
@@ -51,7 +50,6 @@ always @(posedge clk or negedge rst) begin
             addr_reg <= addr;
             rdata_reg <= 0;
             rdata_valid <= 0;
-            oe <= 0;
         end
 
         if (state == READ) begin

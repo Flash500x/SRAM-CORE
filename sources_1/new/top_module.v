@@ -75,7 +75,10 @@ controller #(
     .done(done),
     .op_complete(op_complete),
     .data_valid(data_valid),
-    .rdata_valid(rdata_valid)
+    .rdata_valid(rdata_valid),
+    .illegal(1'b0),//no fifos or burst checks at this level
+    .w_avail(1'b1),
+    .r_ready(1'b1)
 );
 
 rd_fsm #(

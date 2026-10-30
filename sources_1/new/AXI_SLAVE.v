@@ -8,7 +8,7 @@ parameter BURST_TYPE    = 2)(
     //system config
     input wire [ADDRESS_WIDTH-1:0]AWADDR,//write address
     input wire [BURST_LENGTH -1:0]AWLEN,//burst length
-    input wire [BURST_TYPE -1 :0]AWBURST,//burst type only FIXED and INCR
+    input wire [BURST_TYPE -1 :0]AWBURST,//burst type FIXED, INCR and WRAP
     input wire AWVALID,//from master
     input wire [ID_WIDTH -1:0]AWID,//transaction ID
     output AWREADY,//output of slave
@@ -42,7 +42,7 @@ parameter BURST_TYPE    = 2)(
         //controller channels
             output wire req,rw,clk,abort,
             output wire bmode,
-            output wire [3:0]burst_len,
+            output wire [BURST_LENGTH:0]burst_len,//number of beats, 1 to 16
             output wire [1:0]burst_type,
             output wire [ADDRESS_WIDTH-1:0]addr,
             output wire [DATA_WIDTH-1:0]data_in,
@@ -50,7 +50,10 @@ parameter BURST_TYPE    = 2)(
             input wire busy,
             input wire [DATA_WIDTH-1:0]data_out,
             input wire data_valid,rdata_valid,
-            output wire controller_clk
+            output wire controller_clk,
+            output wire illegal,
+            output wire w_avail,
+            output wire r_ready
         //controller channels
 
     );
@@ -69,7 +72,7 @@ parameter BURST_TYPE    = 2)(
         )aw(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({AWADDR,AWLEN + 4'd1,AWBURST,AWID}),
+        .data_in({AWADDR,AWLEN,AWBURST,AWID}),
         .wr_en(aw_wd_en_axi),
         .rd_en(aw_rd_en_axi),
         .full(aw_fifo_full),
@@ -97,6 +100,7 @@ parameter BURST_TYPE    = 2)(
    //wfifo
    
    //bfifo
+        reg aw_err,ar_err;
         wire [ID_WIDTH-1:0] a_wid; 
         wire b_rd_en_axi,b_wd_en_axi;
         wire b_fifo_full,b_fifo_empty;
@@ -106,7 +110,7 @@ parameter BURST_TYPE    = 2)(
         )b(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({BRESP,a_wid}),
+        .data_in({aw_err ? 2'b10 : 2'b00,a_wid}),
         .wr_en(b_wd_en_axi),
         .rd_en(b_rd_en_axi),
         .full(b_fifo_full),
@@ -125,7 +129,7 @@ parameter BURST_TYPE    = 2)(
         )ar(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({ARADDR,ARLEN+4'd1,ARBURST,ARID}),
+        .data_in({ARADDR,ARLEN,ARBURST,ARID}),
         .wr_en(ar_wd_en_axi),
         .rd_en(ar_rd_en_axi),
         .full(ar_fifo_full),
@@ -140,7 +144,7 @@ parameter BURST_TYPE    = 2)(
         wire [R_FIFO_WIDTH-1:0] r_fifo_out;
         wire [1:0] rresp;
         wire [ID_WIDTH-1:0] a_rid;
-        assign rresp = 2'b00;    
+        assign rresp = ar_err ? 2'b10 : 2'b00;
         fifo #(
         .DATA_WIDTH(R_FIFO_WIDTH)
         )r(
@@ -156,9 +160,12 @@ parameter BURST_TYPE    = 2)(
    //rfifo
    
    //arbiter
-   wire read_req = !busy && !ar_fifo_empty;
-   wire write_req = !busy && !aw_fifo_empty && !w_fifo_empty ;
+   //no new grant while one is high or a response is still being pushed, so the full flags are settled
+   //a granted op always has a response slot, a full response fifo does not block the other channel
    wire wg,rg;
+   wire can_grant = !busy && !wg && !rg && !op_complete && !rdata_valid;
+   wire read_req = can_grant && !ar_fifo_empty && !r_fifo_full;
+   wire write_req = can_grant && !aw_fifo_empty && !w_fifo_empty && !b_fifo_full;
    
    arbiter art(
    .clk(ACLK),
@@ -176,25 +183,31 @@ parameter BURST_TYPE    = 2)(
    );
    assign rw = wg ? 1'b1:1'b0;
    assign req = wg | rg;
-   assign clk_controller = req | busy;
+   assign clk_controller = req | busy | op_complete | rdata_valid;//extra edge clears the completion pulses
+   assign w_avail = !w_fifo_empty;
+   assign r_ready = !r_fifo_full;
    
-   assign addr = wg ? aw_fifo_out[AW_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :(rg ? ar_fifo_out[AR_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :'hz);
-   assign bmode = wg ?
-               (aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 1) :
-               rg ?
-               (ar_fifo_out[AR_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] != 1) :
-               1'b0;
-   assign burst_len = wg ?
+   assign addr = wg ? aw_fifo_out[AW_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :(rg ? ar_fifo_out[AR_FIFO_WIDTH-1 -: ADDRESS_WIDTH] :{ADDRESS_WIDTH{1'b0}});
+   wire [BURST_LENGTH-1:0] axlen = wg ?
                    aw_fifo_out[AW_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] :
                    rg ?
                    ar_fifo_out[AR_FIFO_WIDTH-ADDRESS_WIDTH-1 -: BURST_LENGTH] :
-                   4'b0;
+                   {BURST_LENGTH{1'b0}};
+   assign bmode = (axlen != 0);
+   assign burst_len = axlen + 1'b1;
    assign burst_type = wg ?
                     aw_fifo_out[ID_WIDTH + BURST_TYPE - 1 -: BURST_TYPE] :
                     rg ?
                     ar_fifo_out[ID_WIDTH + BURST_TYPE - 1 -: BURST_TYPE] :
                     2'b0;
-   
+
+   //reserved burst type, WRAP length other than 2,4,8,16, INCR past the end of memory
+   wire wrap_bad = (axlen != 4'd1 && axlen != 4'd3 && axlen != 4'd7 && axlen != 4'd15);
+   wire [ADDRESS_WIDTH:0] incr_end = {1'b0,addr} + axlen;
+   assign illegal = (burst_type == 2'b11) ||
+                    (burst_type == 2'b10 && wrap_bad) ||
+                    (burst_type == 2'b01 && incr_end[ADDRESS_WIDTH]);
+
    //arbiter
    
    //internal registers
@@ -213,16 +226,16 @@ parameter BURST_TYPE    = 2)(
    assign WREADY = !w_fifo_full;
    assign w_wd_en_axi = WREADY && WVALID;
    assign w_rd_en_axi = wg | data_valid;
-   assign data_in = wg | data_valid? w_fifo_out[W_FIFO_WIDTH -1 -:DATA_WIDTH ]:'hz;
+   assign data_in = w_fifo_out[W_FIFO_WIDTH -1 -:DATA_WIDTH ];
    
    //wfifo logic
    
    //bfifo logic
-    assign b_wd_en_axi = op_complete && !b_fifo_full ;
+    assign b_wd_en_axi = op_complete && !rdata_valid && !b_fifo_full ;//reads complete with rdata_valid high, no B response
     assign b_rd_en_axi = BVALID && BREADY;
     assign BVALID      = !b_fifo_empty;
     assign BID   = b_fifo_out[ID_WIDTH-1:0];
-    assign BRESP = 2'b00;
+    assign BRESP = b_fifo_out[ID_WIDTH+1 -: 2];
     assign a_wid = awid;
    //bfifo logic
    
@@ -236,10 +249,19 @@ parameter BURST_TYPE    = 2)(
    assign RVALID = !r_fifo_empty;
    assign r_rd_en_axi = RVALID && RREADY;
    assign r_wd_en_axi = rdata_valid && !r_fifo_full ;
-   assign RDATA = r_fifo_out[R_FIFO_WIDTH-1 -: DATA_WIDTH];
-   assign RRESP = r_fifo_out[ID_WIDTH+1 -: 2];
-   assign RID   = r_fifo_out[ID_WIDTH:1];
-   assign RLAST = r_fifo_out[0];
+   //the fifo outputs 0 when empty, hold the last beat between transfers
+   reg [R_FIFO_WIDTH-1:0] r_hold;
+   wire [R_FIFO_WIDTH-1:0] r_view = RVALID ? r_fifo_out : r_hold;
+   always @(posedge ACLK or negedge ARST) begin
+       if (!ARST)
+           r_hold <= 0;
+       else if (r_rd_en_axi)
+           r_hold <= r_fifo_out;
+   end
+   assign RDATA = r_view[R_FIFO_WIDTH-1 -: DATA_WIDTH];
+   assign RRESP = r_view[ID_WIDTH+2 -: 2];
+   assign RID   = r_view[ID_WIDTH:1];
+   assign RLAST = r_view[0];
    assign a_rid = arid;
    //rfifo logic
    
@@ -248,25 +270,22 @@ parameter BURST_TYPE    = 2)(
     if (!ARST) begin
         awid <= 1'b0;
         arid  <= 1'b0;
-        
+        aw_err <= 1'b0;
+        ar_err <= 1'b0;
     end
     else begin
         if (wg)
         begin
             
             awid <= aw_fifo_out[ID_WIDTH-1:0];
-            
+            aw_err <= illegal;
            end 
 
         if (rg)
         begin
             arid <= ar_fifo_out[ID_WIDTH-1 -: ID_WIDTH];
-           
+            ar_err <= illegal;
             end
-        if(read_req)
-            awid <= 1'b0;
-        if(write_req)
-            arid <= 1'b0;
         end
        
         

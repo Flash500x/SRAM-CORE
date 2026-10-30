@@ -16,7 +16,7 @@ output wire [DATA_WIDTH-1:0] rdata2
     reg [DATA_WIDTH-1:0] mem[0:DEPTH-1];
     reg [DATA_WIDTH-1:0] TEMPDATA;
     reg [DATA_WIDTH-1:0] TEMPDATA2;
-    integer i;
+ 
     always @(posedge clk or negedge rst)
         begin
            
@@ -24,9 +24,7 @@ output wire [DATA_WIDTH-1:0] rdata2
                 begin
                 status <= 1'b0;
                 TEMPDATA <= 1'b0;
-                for (i = 0; i < 256; i = i + 1)
-                mem[i] <=  0;
-                end
+               end
             else
 
                 begin
@@ -60,6 +58,6 @@ output wire [DATA_WIDTH-1:0] rdata2
                     end
             end
     end
-    assign rdata2 = oe2 ? TEMPDATA2 : 'hz;
+    assign rdata2 = TEMPDATA2;
     
 endmodule
