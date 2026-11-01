@@ -14,7 +14,8 @@ output reg op_complete,data_valid,
 output busy,done,
 input wire [DATA_WIDTH-1:0]data_in,
 output wire [DATA_WIDTH-1:0]data_out,
-output wire rdata_valid
+output wire rdata_valid,
+output wire [3:0] dbg_state
     );
 
     //internal registers
@@ -45,6 +46,7 @@ output wire rdata_valid
     assign data_out = rdata_reg;
     assign done = ram_stat;
     assign rdata_valid = rvalid;
+    assign dbg_state = state;
 
     //state-register
     always @(posedge clk or negedge rst)
