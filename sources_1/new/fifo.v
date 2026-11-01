@@ -7,6 +7,7 @@ module fifo #(parameter DATA_WIDTH = 8)(
     output full,empty
 );
 
+    //(* ram_style = "block" *) 
     reg [DATA_WIDTH-1:0] mem [3:0];
     reg [3:0] count;
     reg [1:0] wr_ptr,rd_ptr;

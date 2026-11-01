@@ -373,7 +373,7 @@ module top_module_main_tb;
     //================================================
     // RESET
     //================================================
-    #20;
+    #120;   // past the 100 ns glbl GSR, BUFGCE passes no clock until then
     ARST = 1;
     #10;
 
