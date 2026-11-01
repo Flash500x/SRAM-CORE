@@ -21,16 +21,17 @@
 
 
 module ICG(
-    input  logic en, clk,
-    output logic clk_out
-);
-`ifdef ASIC
-    // ASIC-style integrated clock gate: latch + AND
+input logic en,clk,
+output logic clk_out
+    );
     logic en_enb;
-    always_latch if (!clk) en_enb = en;
-    assign clk_out = en_enb & clk;
-`else
-    // FPGA: dedicated glitch-free clock buffer with enable
-    BUFGCE u_bufgce (.I(clk), .CE(en), .O(clk_out));
-`endif
+    always_latch
+    begin
+        if(!clk)
+        en_enb = en;
+    end
+    always_comb
+    begin
+    clk_out = en_enb & clk;
+    end
 endmodule
