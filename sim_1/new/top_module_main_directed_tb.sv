@@ -1,12 +1,8 @@
 `timescale 1ns / 1ps
 
-module top_module_main_tb;
+module top_module_main_directed_tb;   // directed tests, the class based bench is top_module_main_tb
 
-    parameter ADDRESS_WIDTH = 8;
-    parameter DATA_WIDTH    = 8;
-    parameter BURST_LENGTH  = 4;
-    parameter ID_WIDTH      = 2;
-    parameter BURST_TYPE    = 2;
+    import config_pkg::*;   // ADDRESS_WIDTH, DATA_WIDTH, BURST_LENGTH, ID_WIDTH, BURST_TYPE
 
     localparam FIXED = 2'b00;
     localparam INCR  = 2'b01;
@@ -67,30 +63,15 @@ module top_module_main_tb;
     reg                   RREADY;
 
     //==================================================
-    // DIRECT READ PORT
-    //==================================================
-    reg                      rd_req;
-    reg  [ADDRESS_WIDTH-1:0] rd_addr;
-    wire [DATA_WIDTH-1:0]    rd_data;
-    wire                     rd_done;
-    wire                     rd_busy;
-
-    //==================================================
     // CLOCK
     //==================================================
     always #5 ACLK = ~ACLK;
 
 
     //==================================================
-    // TOP MODULE (AXI_SLAVE + controller + SRAM + rd_fsm)
+    // TOP MODULE (AXI_SLAVE + controller + SRAM)
     //==================================================
-    top_module_main #(
-        .ADDRESS_WIDTH(ADDRESS_WIDTH),
-        .DATA_WIDTH(DATA_WIDTH),
-        .BURST_LENGTH(BURST_LENGTH),
-        .ID_WIDTH(ID_WIDTH),
-        .BURST_TYPE(BURST_TYPE)
-    ) dut (
+    top_module_main dut (
 
         .ACLK(ACLK),
         .ARST(ARST),
@@ -129,14 +110,7 @@ module top_module_main_tb;
         .RRESP(RRESP),
         .RLAST(RLAST),
         .RVALID(RVALID),
-        .RREADY(RREADY),
-
-        // direct read port
-        .rd_req(rd_req),
-        .rd_addr(rd_addr),
-        .rd_data(rd_data),
-        .rd_done(rd_done),
-        .rd_busy(rd_busy)
+        .RREADY(RREADY)
     );
 
 
@@ -152,6 +126,7 @@ module top_module_main_tb;
     reg [1:0]            b_resp [0:63];
     integer rn, bn, pass_n, fail_n;
     integer i, k, n, bad;
+    time    t0;
     reg rready_random;
     reg r_seen;
     reg [DATA_WIDTH-1:0] r_prev;
@@ -233,6 +208,16 @@ module top_module_main_tb;
     end
     endtask
 
+    // one W beat with a chosen WLAST
+    task send_beat(input [DATA_WIDTH-1:0] d, input last);
+    begin
+        WDATA = d; WLAST = last; WVALID = 1'b1;
+        while (!WREADY) #10;
+        #10;
+        WVALID = 1'b0; WLAST = 1'b0;
+    end
+    endtask
+
     task send_ar(input [ADDRESS_WIDTH-1:0] a, input [BURST_LENGTH-1:0] len, input [1:0] burst, input [ID_WIDTH-1:0] id);
     begin
         ARADDR = a; ARLEN = len; ARBURST = burst; ARID = id; ARVALID = 1'b1;
@@ -269,13 +254,21 @@ module top_module_main_tb;
     end
     endtask
 
-    // the whole memory must match, so a stray or runaway write cannot hide
+    // SEC-DED codeword the SRAM should hold for a data byte
+    function automatic [CODE_WIDTH-1:0] ecc_code(input [DATA_WIDTH-1:0] d);
+        logic [HAMMING_WIDTH-1:0] h;
+        h[DATA_WIDTH-1:0] = d;
+        for (int j = 0; j < PARITY_WIDTH; j++) h[DATA_WIDTH+j] = ^(d & parity_mask(j));
+        return {^h, h};
+    endfunction
+
+    // the whole memory must match, data and check bits, so a stray or runaway write cannot hide
     task check_mem;
     begin
         bad = 0;
         for (i = 0; i < 256; i = i + 1)
-            if (dut.u_spsram.mem[i] !== model[i]) begin
-                if (bad == 0) $display("  mem[%h]=%h expected %h", i, dut.u_spsram.mem[i], model[i]);
+            if (dut.u_spsram.mem[i] !== ecc_code(model[i])) begin
+                if (bad == 0) $display("  mem[%h]=%h expected %h", i, dut.u_spsram.mem[i], ecc_code(model[i]));
                 bad = bad + 1;
             end
         check(bad == 0, "memory contents");
@@ -294,8 +287,10 @@ module top_module_main_tb;
                 check(r_data[k] === model[beat_addr(a, len, burst, beat)], "RDATA");
                 check(r_resp[k] === OKAY, "RRESP OKAY");
             end
-            else
+            else begin
                 check(r_resp[k] === SLVERR, "RRESP SLVERR");
+                check(r_data[k] === 0, "RDATA 0 on SLVERR");
+            end
             check(r_id[k] === id, "RID");
             check(r_last[k] === (beat == len), "RLAST");
         end
@@ -364,10 +359,8 @@ module top_module_main_tb;
 
     RREADY  = 1;
 
-    rd_req  = 0;
-    rd_addr = 0;
-
     rn = 0; bn = 0; pass_n = 0; fail_n = 0;
+    for (i = 0; i < 256; i = i + 1) model[i] = 0;   // memory starts at 0
     rready_random = 0;
 
     //================================================
@@ -427,8 +420,8 @@ module top_module_main_tb;
     write_op(8'h22, 3, WRAP, 2'd1, 8'hC1, 0);
     read_op (8'h22, 3, WRAP, 2'd1);
     read_op (8'h20, 3, INCR, 2'd2);       // same window in address order
-    check(dut.u_spsram.mem[8'h20] === 8'hC3 && dut.u_spsram.mem[8'h21] === 8'hC4 &&
-          dut.u_spsram.mem[8'h22] === 8'hC1 && dut.u_spsram.mem[8'h23] === 8'hC2, "wrap 4 order");
+    check(dut.u_spsram.mem[8'h20][DATA_WIDTH-1:0] === 8'hC3 && dut.u_spsram.mem[8'h21][DATA_WIDTH-1:0] === 8'hC4 &&
+          dut.u_spsram.mem[8'h22][DATA_WIDTH-1:0] === 8'hC1 && dut.u_spsram.mem[8'h23][DATA_WIDTH-1:0] === 8'hC2, "wrap 4 order");
 
     $display("[8] WRAP 8 beats at 0x75: 75 76 77 70 71 72 73 74");
     write_op(8'h75, 7, WRAP, 2'd2, 8'h20, 0);
@@ -447,7 +440,7 @@ module top_module_main_tb;
     //================================================
     $display("[11] FIXED 2 beats at 0x90: last beat stays, next address untouched");
     write_op(8'h90, 1, FIXED, 2'd2, 8'hE1, 0);
-    check(dut.u_spsram.mem[8'h90] === 8'hE2, "fixed keeps last beat");
+    check(dut.u_spsram.mem[8'h90][DATA_WIDTH-1:0] === 8'hE2, "fixed keeps last beat");
     read_op (8'h90, 3, FIXED, 2'd2);
 
     //================================================
@@ -594,17 +587,204 @@ module top_module_main_tb;
     check_mem;
 
     //================================================
-    // DIRECT READ PORT
+    // ECC: errors are put straight into the SRAM array
     //================================================
-    $display("[22] direct read port returns stored data");
-    rd_addr = 8'h41;
-    rd_req  = 1'b1;
-    #10;
-    rd_req  = 1'b0;
-    n = 0;
-    while (!rd_done && n < 20) begin #10; n = n + 1; end
-    #10;
-    check(rd_data === model[8'h41], "rd_data");
+    $display("[22] ECC single-bit error in every bit of the codeword: corrected, RRESP OKAY, written back");
+    for (n = 0; n < CODE_WIDTH; n = n + 1) begin
+        dut.u_spsram.mem[8'h41][n] = ~dut.u_spsram.mem[8'h41][n];
+        rn = 0;
+        send_ar(8'h41, 0, INCR, 2'd1);
+        wait_r(1);
+        #50;
+        check(rn == 1, "ECC single: one beat");
+        check(r_data[0] === model[8'h41], "ECC single: data corrected");
+        check(r_resp[0] === OKAY, "ECC single: RRESP OKAY");
+        check(dut.u_spsram.mem[8'h41] === ecc_code(model[8'h41]), "ECC single: scrubbed in memory");
+    end
+    check_mem;
+
+    $display("[22a] ECC double-bit error: RRESP SLVERR, RDATA 0");
+    for (n = 0; n < CODE_WIDTH; n = n + 1)
+        for (k = n + 1; k < CODE_WIDTH; k = k + 3) begin            // a spread of pairs, data/parity/overall
+            dut.u_spsram.mem[8'h42][n] = ~dut.u_spsram.mem[8'h42][n];
+            dut.u_spsram.mem[8'h42][k] = ~dut.u_spsram.mem[8'h42][k];
+            rn = 0;
+            send_ar(8'h42, 0, INCR, 2'd2);
+            wait_r(1);
+            #50;
+            check(rn == 1, "ECC double: one beat");
+            check(r_resp[0] === SLVERR, "ECC double: RRESP SLVERR");
+            check(r_data[0] === 0, "ECC double: RDATA 0");
+            check(r_id[0] === 2'd2 && r_last[0] === 1'b1, "ECC double: RID RLAST");
+            dut.u_spsram.mem[8'h42][n] = ~dut.u_spsram.mem[8'h42][n];
+            dut.u_spsram.mem[8'h42][k] = ~dut.u_spsram.mem[8'h42][k];
+        end
+    check_mem;
+
+    $display("[22b] ECC in a burst: only the bad beat gets SLVERR, single errors scrubbed");
+    dut.u_spsram.mem[8'h45][3]  = ~dut.u_spsram.mem[8'h45][3];      // single: corrected
+    dut.u_spsram.mem[8'h46][0]  = ~dut.u_spsram.mem[8'h46][0];      // double: SLVERR
+    dut.u_spsram.mem[8'h46][10] = ~dut.u_spsram.mem[8'h46][10];
+    rn = 0;
+    send_ar(8'h44, 3, INCR, 2'd3);
+    wait_r(4);
+    #100;
+    check(rn == 4, "ECC burst: 4 beats");
+    for (n = 0; n < 4; n = n + 1) begin
+        if (n == 2) begin
+            check(r_resp[n] === SLVERR, "ECC burst: bad beat SLVERR");
+            check(r_data[n] === 0, "ECC burst: bad beat RDATA 0");
+        end
+        else begin
+            check(r_resp[n] === OKAY, "ECC burst: other beats OKAY");
+            check(r_data[n] === model[8'h44 + n], "ECC burst: other beats data");
+        end
+        check(r_id[n] === 2'd3 && r_last[n] === (n == 3), "ECC burst: RID RLAST");
+    end
+    check(dut.u_spsram.mem[8'h45] === ecc_code(model[8'h45]), "ECC burst: single scrubbed");
+    check(dut.u_spsram.mem[8'h46] !== ecc_code(model[8'h46]), "ECC burst: double left as is");
+    rn = 0;
+    send_ar(8'h40, 0, INCR, 2'd0);
+    wait_r(1);
+    #50;
+    check(r_resp[0] === OKAY && r_data[0] === model[8'h40], "ECC: error does not stick");
+
+    $display("[22c] write over a corrupted word stores a fresh codeword");
+    //(0x46 still holds the double error here)
+    write_op(8'h45, 1, INCR, 2'd1, 8'h9C, 0);    // rewrites 0x45 and 0x46, BRESP OKAY
+    read_op (8'h45, 1, INCR, 2'd1);
+
+    $display("[22d] single errors on every beat of a 16 beat WRAP read with random RREADY: all scrubbed");
+    for (n = 0; n < 16; n = n + 1)
+        dut.u_spsram.mem[8'h80 + n][n % CODE_WIDTH] = ~dut.u_spsram.mem[8'h80 + n][n % CODE_WIDTH];
+    rn = 0;
+    rready_random = 1;
+    send_ar(8'h8E, 15, WRAP, 2'd1);
+    wait_r(16);
+    rready_random = 0;
+    RREADY = 1;
+    #100;
+    check(rn == 16, "scrub burst: 16 beats");
+    check_r(0, 8'h8E, 15, WRAP, 2'd1);           // all OKAY, corrected data
+    check_mem;                                    // every word fixed in the SRAM
+
+    //================================================
+    // WRITE ERRORS: BRESP SLVERR
+    //================================================
+    $display("[24] W timeout, AW with no data: SLVERR, late beats dropped");
+    bn = 0;
+    t0 = $time;
+    send_aw(8'h30, 3, INCR, 2'd2);
+    wait_b(1);
+    check(bn == 1 && b_resp[0] === SLVERR && b_id[0] === 2'd2, "no data: BRESP SLVERR, BID");
+    check(($time - t0) >= W_TIMEOUT * 10, "no data: not before the timeout");
+    check_mem;                                   // nothing written
+    send_w(8'h11, 3, 0);                         // the 4 late beats are taken and thrown away
+    #100;
+    check(bn == 1, "late beats: no second B");
+    check_mem;
+    write_op(8'h30, 3, INCR, 2'd1, 8'h21, 0);    // next write is clean
+    read_op (8'h30, 3, INCR, 2'd1);
+
+    $display("[24a] W timeout in the middle of a burst: SLVERR, rest dropped");
+    bn = 0;
+    fork
+        send_aw(8'h34, 3, INCR, 2'd3);
+        begin send_beat(8'h40, 1'b0); send_beat(8'h41, 1'b0); end   // 2 of 4 beats, then stall
+    join
+    wait_b(1);
+    check(bn == 1 && b_resp[0] === SLVERR && b_id[0] === 2'd3, "mid burst: BRESP SLVERR, BID");
+    model[8'h34] = 8'h40;                        // beats already taken stay written
+    model[8'h35] = 8'h41;
+    check_mem;
+    send_beat(8'h42, 1'b0); send_beat(8'h43, 1'b1);                // late rest of the burst
+    #100;
+    check(bn == 1, "mid burst: no second B");
+    check_mem;
+    write_op(8'h36, 1, INCR, 2'd0, 8'h66, 0);
+    read_op (8'h34, 3, INCR, 2'd0);
+
+    $display("[24b] slow master inside the timeout: OKAY");
+    write_op(8'h38, 3, INCR, 2'd2, 8'h50, W_TIMEOUT - 8);          // long gaps between beats
+    bn = 0;
+    fork
+        send_aw(8'h3C, 0, INCR, 2'd1);
+        begin #((W_TIMEOUT - 8) * 10); send_beat(8'h5C, 1'b1); end // data well after AW
+    join
+    update_model(8'h3C, 0, INCR, 8'h5C);
+    wait_b(1);
+    check(bn == 1 && b_resp[0] === OKAY, "late data inside timeout: OKAY");
+    check_mem;
+
+    $display("[24c] early WLAST: burst ends there, SLVERR, next burst right behind stays aligned");
+    bn = 0;
+    t0 = $time;
+    fork
+        begin send_aw(8'h3A, 3, INCR, 2'd1); send_aw(8'h3C, 1, INCR, 2'd2); end  // 4 beats, then 2 beats
+        begin send_beat(8'h7A, 1'b0); send_beat(8'h7B, 1'b1);                    // master ends the first after 2
+              send_beat(8'hA5, 1'b0); send_beat(8'hA6, 1'b1); end                 // second burst follows at once
+    join
+    wait_b(2);
+    #100;
+    check(bn == 2, "early WLAST: 2 responses");
+    check(b_resp[0] === SLVERR && b_id[0] === 2'd1, "early WLAST: first SLVERR");
+    check(b_resp[1] === OKAY && b_id[1] === 2'd2, "early WLAST: second OKAY");
+    check(($time - t0) < W_TIMEOUT * 10, "early WLAST: ended on WLAST, not by timeout");
+    model[8'h3A] = 8'h7A; model[8'h3B] = 8'h7B;  // first burst: its 2 beats only
+    model[8'h3C] = 8'hA5; model[8'h3D] = 8'hA6;  // second burst: its own beats
+    check_mem;
+    read_op (8'h3A, 3, INCR, 2'd2);
+
+    $display("[24c1] WLAST missing on the last beat: SLVERR, extra beats purged up to WLAST");
+    bn = 0;
+    fork
+        send_aw(8'h3C, 1, INCR, 2'd3);                              // 2 beats announced
+        begin send_beat(8'h8C, 1'b0); send_beat(8'h8D, 1'b0);       // no WLAST on beat 2
+              send_beat(8'h8E, 1'b0); send_beat(8'h8F, 1'b1); end   // 2 extra beats, WLAST
+    join
+    wait_b(1);
+    #100;
+    check(bn == 1 && b_resp[0] === SLVERR && b_id[0] === 2'd3, "missing WLAST: SLVERR");
+    model[8'h3C] = 8'h8C; model[8'h3D] = 8'h8D;  // extra beats not written anywhere
+    check_mem;
+    write_op(8'h3E, 1, INCR, 2'd0, 8'hB7, 0);    // next burst gets its own beats, OKAY
+    read_op (8'h3A, 7, INCR, 2'd0);
+
+    $display("[24c2] missing WLAST, extra beats already queued behind the next AW");
+    bn = 0;
+    fork
+        begin send_aw(8'h60, 0, INCR, 2'd1); send_aw(8'h61, 0, INCR, 2'd2); end
+        begin send_beat(8'hC0, 1'b0); send_beat(8'hC1, 1'b1);       // 1 beat + 1 extra, WLAST
+              send_beat(8'hC2, 1'b1); end                           // the second write's beat
+    join
+    wait_b(2);
+    #100;
+    check(bn == 2, "queued: 2 responses");
+    check(b_resp[0] === SLVERR && b_id[0] === 2'd1, "queued: first SLVERR");
+    check(b_resp[1] === OKAY && b_id[1] === 2'd2, "queued: second OKAY");
+    model[8'h60] = 8'hC0; model[8'h61] = 8'hC2;
+    check_mem;
+
+    $display("[24d] W timeout while B fifo is full: SLVERR waits for room, order kept");
+    bn = 0;
+    BREADY = 0;
+    fork
+        for (n = 0; n < 4; n = n + 1) send_aw(8'hF0 + n, 0, INCR, n[1:0]);
+        for (k = 0; k < 4; k = k + 1) send_w(8'hA0 + k, 0, 0);
+    join
+    for (n = 0; n < 4; n = n + 1) update_model(8'hF0 + n, 0, INCR, 8'hA0 + n);
+    send_aw(8'hF8, 0, INCR, 2'd3);              // no data for this one
+    #((W_TIMEOUT + 20) * 10);
+    check(bn == 0, "B full: nothing out while BREADY low");
+    BREADY = 1;
+    wait_b(5);
+    #100;
+    check(bn == 5, "B full: 5 responses");
+    for (n = 0; n < 4; n = n + 1) check(b_resp[n] === OKAY && b_id[n] === n[1:0], "B full: writes OKAY");
+    check(b_resp[4] === SLVERR && b_id[4] === 2'd3, "B full: timed out write SLVERR last");
+    send_beat(8'hEE, 1'b1);                     // its late beat is dropped
+    #100;
+    check_mem;
 
     //================================================
     // SECOND RESET: first transaction is now a read

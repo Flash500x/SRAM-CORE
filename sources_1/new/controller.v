@@ -17,7 +17,12 @@ output wire [DATA_WIDTH-1:0]data_out,
 output wire rdata_valid,
 input wire illegal,//burst gets SLVERR, memory is not written
 input wire w_avail,//W fifo holds the next write beat
-input wire r_ready//R fifo has space for a read beat
+input wire r_ready,//R fifo has space for a read beat
+input wire w_timeout,//master is too slow with W data: end the write burst now, it gets SLVERR
+output wire w_wait,//write burst is waiting for its next W beat
+input wire w_last,//WLAST of the W beat at data_in: an early WLAST ends the burst on that beat
+input wire ecc_single,//the read beat in data_out had a single-bit error (already corrected)
+input wire [DATA_WIDTH-1:0]scrub_data//corrected codeword of data_out, written back on ecc_single
     );
 
     //internal registers
@@ -31,6 +36,7 @@ input wire r_ready//R fifo has space for a read beat
     reg [1:0]burst_type_reg;
     reg rvalid;
     reg illegal_reg;
+    reg wlast_reg;//the write beat in data_reg carried WLAST
 
     //local parameters
     localparam IDLE = 4'b0001;
@@ -39,11 +45,13 @@ input wire r_ready//R fifo has space for a read beat
     localparam WRITE = 4'b0011;
     localparam READ = 4'b0100;
     localparam BE = 4'b0101;
+    localparam CHK = 4'b0110;//read beat captured, decoder result on data_out is valid
+    localparam SCRUB = 4'b0111;//write the corrected codeword back
 
     localparam MAXTRY = 2'b11;
 
     //cont assignments
-    assign data_in_ram = (!data_valid)?data_reg:data_in;
+    assign data_in_ram = (state == SCRUB) ? scrub_data : ((!data_valid)?data_reg:data_in);
     assign busy = (state == IDLE || state == PRE_IDLE)? 1'b0:1'b1;
     assign sram_addr = addr_reg;
     assign data_out = rdata_reg;
@@ -53,8 +61,11 @@ input wire r_ready//R fifo has space for a read beat
     //hold BE until the next beat can move
     //rvalid: a beat is being pushed this cycle, r_ready does not include it yet
     wire be_stall = rw_reg ? !w_avail : (rvalid || !r_ready);
+    assign w_wait = (state == BE) && rw_reg && !w_avail;
     //wrap boundary: the low bits count inside the window, the high bits stay
     wire [ADDRESS_WIDTH-1:0] wrap_mask = burst_len_reg - 1'b1;
+    //burst has more beats to go: count not reached, and the master has not ended it with WLAST
+    wire more_beats = bmode_reg && (burst_count < burst_len_reg - 1) && !(rw_reg && wlast_reg);
     wire [ADDRESS_WIDTH-1:0] wrap_addr = (addr_reg & ~wrap_mask) | ((addr_reg + 1'b1) & wrap_mask);
 
     //state-register
@@ -79,6 +90,7 @@ input wire r_ready//R fifo has space for a read beat
             // FIX
             rvalid <= 1'b0;
             illegal_reg <= 1'b0;
+            wlast_reg <= 1'b0;
         end
         else
         begin
@@ -100,7 +112,10 @@ input wire r_ready//R fifo has space for a read beat
                 illegal_reg <= illegal;
 
                 if(rw)
+                begin
                     data_reg <= data_in;
+                    wlast_reg <= w_last;
+                end
             end
 
             else if(state == BE && !be_stall)
@@ -110,6 +125,7 @@ input wire r_ready//R fifo has space for a read beat
                 if(rw_reg)
                 begin
                     data_reg <= data_in;
+                    wlast_reg <= w_last;
                     data_valid <= 1'b1;
                 end
 
@@ -123,15 +139,18 @@ input wire r_ready//R fifo has space for a read beat
             begin
                 if(ram_stat)
                 begin
-                    rdata_reg <= data_out_ram;
+                    rdata_reg <= illegal_reg ? {DATA_WIDTH{1'b0}} : data_out_ram;//an error beat carries no data
                     rvalid <= 1'b1;
                     
                 end
             end
 
+            if (state == BE && w_timeout)
+                op_complete <= 1'b1;//remaining beats are dropped, B response goes out now
+
             if (state == WRITE && ram_stat)
             begin
-                if (!bmode_reg || burst_count == burst_len_reg - 1)
+                if (!more_beats)
                     op_complete <= 1'b1;
             end
 
@@ -175,33 +194,37 @@ input wire r_ready//R fifo has space for a read beat
 
                 WRITE:
                 begin
-                    if(ram_stat && bmode_reg)
-                    begin
-                        if(burst_count < burst_len_reg -1)
-                            next_state = BE;
-                        else
-                            next_state = IDLE;
-                    end
-                    else if(ram_stat && ~bmode_reg)
-                        next_state = IDLE;
+                    if(ram_stat)
+                        next_state = more_beats ? BE : IDLE;//early WLAST ends the burst here
                 end
 
                 READ:
                 begin
-                    if(ram_stat && bmode_reg)
-                    begin
-                        if(burst_count < burst_len_reg -1)
-                            next_state = BE;
-                        else
-                            next_state = IDLE;
-                    end
-                    else if(ram_stat && ~bmode_reg)
-                        next_state = IDLE;
+                    if(ram_stat)
+                        next_state = CHK;
+                end
+
+                //data_out now holds the beat, the decoder tells if it had a corrected error
+                CHK:
+                begin
+                    if(ecc_single)
+                        next_state = SCRUB;
+                    else
+                        next_state = more_beats ? BE : IDLE;
+                end
+
+                //corrected codeword goes back to the same address, then the burst carries on
+                SCRUB:
+                begin
+                    if(ram_stat)
+                        next_state = more_beats ? BE : IDLE;
                 end
 
                 BE:
                 begin
-                    if(be_stall)
+                    if(w_timeout)
+                        next_state = IDLE;
+                    else if(be_stall)
                         next_state = BE;
                     else if(bmode_reg && rw_reg)
                         next_state = WRITE;
@@ -271,6 +294,13 @@ input wire r_ready//R fifo has space for a read beat
                 oe = 1'b0;
                 wre = 1'b0;
                
+            end
+
+            SCRUB:
+            begin
+                ce = !ram_stat;
+                oe = 1'b0;
+                wre = !ram_stat;
             end
 
         endcase

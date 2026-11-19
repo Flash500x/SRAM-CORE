@@ -2,7 +2,9 @@
 
 module AXI_SLAVE #(parameter ADDRESS_WIDTH = 8, parameter DATA_WIDTH = 8,
 parameter BURST_LENGTH = 4,parameter ID_WIDTH      = 2,
-parameter BURST_TYPE    = 2)(
+parameter BURST_TYPE    = 2,
+parameter W_TIMEOUT     = 32,//cycles the slave waits for a W beat before the write gets SLVERR
+parameter CLOCK_GATING  = 1)(//1: gate controller_clk with the ICG, 0: controller_clk = ACLK
     input ACLK,
     input ARST,
     //system config
@@ -53,7 +55,11 @@ parameter BURST_TYPE    = 2)(
             output wire controller_clk,
             output wire illegal,
             output wire w_avail,
-            output wire r_ready
+            output wire r_ready,
+            input wire ecc_err,//uncorrectable (double bit) ECC error on the read beat in data_out
+            input wire w_wait,//controller burst is waiting for its next W beat
+            output wire w_timeout,//W beat late: controller ends the write burst
+            output wire w_last//WLAST of the W beat at data_in
         //controller channels
 
     );
@@ -101,6 +107,10 @@ parameter BURST_TYPE    = 2)(
    
    //bfifo
         reg aw_err,ar_err;
+        wire wto_bresp;//SLVERR for an AW whose W data never came, sent without the controller
+        reg aw_to_pending;//head AW timed out waiting for W data, its SLVERR is not sent yet
+        reg wr_busy,w_drop;//write in flight / purging the leftover beats of a broken burst up to its WLAST
+        wire wto_fire;//W timeout reached this cycle
         wire [ID_WIDTH-1:0] a_wid; 
         wire b_rd_en_axi,b_wd_en_axi;
         wire b_fifo_full,b_fifo_empty;
@@ -110,7 +120,7 @@ parameter BURST_TYPE    = 2)(
         )b(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({aw_err ? 2'b10 : 2'b00,a_wid}),
+        .data_in(wto_bresp ? {2'b10,aw_fifo_out[ID_WIDTH-1:0]} : {aw_err ? 2'b10 : 2'b00,a_wid}),
         .wr_en(b_wd_en_axi),
         .rd_en(b_rd_en_axi),
         .full(b_fifo_full),
@@ -144,13 +154,16 @@ parameter BURST_TYPE    = 2)(
         wire [R_FIFO_WIDTH-1:0] r_fifo_out;
         wire [1:0] rresp;
         wire [ID_WIDTH-1:0] a_rid;
-        assign rresp = ar_err ? 2'b10 : 2'b00;
+        //SLVERR for an illegal burst, or for a single beat whose data could not be corrected
+        wire beat_err = ar_err || ecc_err;
+        assign rresp = beat_err ? 2'b10 : 2'b00;
+        wire [DATA_WIDTH-1:0] r_beat_data = beat_err ? {DATA_WIDTH{1'b0}} : data_out;//an error beat carries no data
         fifo #(
         .DATA_WIDTH(R_FIFO_WIDTH)
         )r(
         .clk(ACLK),
         .rst(ARST),
-        .data_in({data_out,rresp,a_rid,op_complete}),
+        .data_in({r_beat_data,rresp,a_rid,op_complete}),
         .wr_en(r_wd_en_axi),
         .rd_en(r_rd_en_axi),
         .full(r_fifo_full),
@@ -165,7 +178,7 @@ parameter BURST_TYPE    = 2)(
    wire wg,rg;
    wire can_grant = !busy && !wg && !rg && !op_complete && !rdata_valid;
    wire read_req = can_grant && !ar_fifo_empty && !r_fifo_full;
-   wire write_req = can_grant && !aw_fifo_empty && !w_fifo_empty && !b_fifo_full;
+   wire write_req = can_grant && !aw_fifo_empty && !w_fifo_empty && !b_fifo_full && !aw_to_pending && !w_drop;
    
    arbiter art(
    .clk(ACLK),
@@ -176,11 +189,17 @@ parameter BURST_TYPE    = 2)(
    .rg(rg)
    );
    wire clk_controller;
-   ICG clock(
-   .en(clk_controller),
-   .clk(ACLK),
-   .clk_out(controller_clk)
-   );
+   generate
+   if (CLOCK_GATING) begin : g_icg
+       ICG clock(
+       .en(clk_controller),
+       .clk(ACLK),
+       .clk_out(controller_clk)
+       );
+   end else begin : g_no_icg
+       assign controller_clk = ACLK;//no gating, controller and SRAM run every cycle
+   end
+   endgenerate
    assign rw = wg ? 1'b1:1'b0;
    assign req = wg | rg;
    assign clk_controller = req | busy | op_complete | rdata_valid;//extra edge clears the completion pulses
@@ -219,19 +238,25 @@ parameter BURST_TYPE    = 2)(
    //awfifo logic
     assign AWREADY = !aw_fifo_full;
     assign aw_wd_en_axi = AWREADY && AWVALID;
-    assign aw_rd_en_axi = wg ;
+    assign aw_rd_en_axi = wg | wto_bresp;
    //awfifo logic
    
    //wfifo logic
-   assign WREADY = !w_fifo_full;
+   //w_drop: the burst ended before the master's WLAST (timeout, or WLAST missing on the last beat)
+   //its leftover beats go through the W fifo as usual and are purged from the head up to WLAST,
+   //so the next burst starts on its own first beat
+   //WREADY is low while a timeout is being decided
+   wire w_purge = w_drop && !w_fifo_empty;
+   assign WREADY = !w_fifo_full && !aw_to_pending && !wto_fire;
    assign w_wd_en_axi = WREADY && WVALID;
-   assign w_rd_en_axi = wg | data_valid;
+   assign w_rd_en_axi = wg | data_valid | w_purge;
+   assign w_last = w_fifo_out[0];
    assign data_in = w_fifo_out[W_FIFO_WIDTH -1 -:DATA_WIDTH ];
    
    //wfifo logic
    
    //bfifo logic
-    assign b_wd_en_axi = op_complete && !rdata_valid && !b_fifo_full ;//reads complete with rdata_valid high, no B response
+    assign b_wd_en_axi = (op_complete && !rdata_valid && !b_fifo_full) || wto_bresp;//reads complete with rdata_valid high, no B response
     assign b_rd_en_axi = BVALID && BREADY;
     assign BVALID      = !b_fifo_empty;
     assign BID   = b_fifo_out[ID_WIDTH-1:0];
@@ -265,6 +290,26 @@ parameter BURST_TYPE    = 2)(
    assign a_rid = arid;
    //rfifo logic
    
+   //write data timeout
+   //wr_busy: a granted write has not sent its B response yet
+   //starved: the slave needs a W beat and the W fifo is empty, either the granted burst is
+   //waiting between beats, or no write is running and the head AW has no data at all
+   localparam WTO_BITS = $clog2(W_TIMEOUT + 1);
+   reg [WTO_BITS-1:0] wto_cnt;
+   wire w_starved = w_fifo_empty && !w_drop && !aw_to_pending &&
+                    (wr_busy ? w_wait : !aw_fifo_empty);
+   assign wto_fire = w_starved && (wto_cnt == W_TIMEOUT - 1);
+   assign w_timeout = wto_fire && wr_busy;
+   //a timed out AW with no data is answered once nothing else is in flight and B has room
+   assign wto_bresp = aw_to_pending && can_grant && !b_fifo_full && !aw_fifo_empty;
+
+   //WLAST check: the beat the controller takes must carry WLAST exactly on the last beat
+   reg [BURST_LENGTH-1:0] w_len,w_beat;
+   reg w_last_seen;//this burst already had a WLAST, nothing left to drop after a timeout
+   wire w_beat_last = w_fifo_out[0];
+   wire wlast_bad_first = w_beat_last != (axlen == 0);
+   wire wlast_bad_next  = w_beat_last != (w_beat == w_len);
+
    //memory and internal register operations
     always @(posedge ACLK or negedge ARST) begin
     if (!ARST) begin
@@ -272,14 +317,66 @@ parameter BURST_TYPE    = 2)(
         arid  <= 1'b0;
         aw_err <= 1'b0;
         ar_err <= 1'b0;
+        wto_cnt <= 0;
+        wr_busy <= 1'b0;
+        w_drop <= 1'b0;
+        aw_to_pending <= 1'b0;
+        w_len <= 0;
+        w_beat <= 0;
+        w_last_seen <= 1'b0;
     end
     else begin
+        //timeout counter, counts only while starved
+        if (!w_starved || wto_fire)
+            wto_cnt <= 0;
+        else
+            wto_cnt <= wto_cnt + 1'b1;
+
+        if (wg)
+            wr_busy <= 1'b1;
+        else if (op_complete && !rdata_valid)
+            wr_busy <= 1'b0;
+
+        if (wto_fire && wr_busy)
+        begin
+            aw_err <= 1'b1;//burst cut short: SLVERR
+            w_drop <= !w_last_seen;//the rest of the burst may still come, throw it away
+        end
+        else if (wto_fire)
+            aw_to_pending <= 1'b1;
+
+        if (wto_bresp)
+        begin
+            aw_to_pending <= 1'b0;
+            w_drop <= 1'b1;//none of its beats came yet
+        end
+
+        //write burst finished on its beat count but the master never gave WLAST: more beats follow
+        if (op_complete && !rdata_valid && wr_busy && !w_last_seen)
+            w_drop <= 1'b1;
+
+        if (w_purge && w_beat_last)
+        begin
+            w_drop <= 1'b0;
+            w_last_seen <= 1'b1;
+        end
+
         if (wg)
         begin
             
             awid <= aw_fifo_out[ID_WIDTH-1:0];
-            aw_err <= illegal;
+            aw_err <= illegal || wlast_bad_first;
+            w_len <= axlen;
+            w_beat <= 1;
+            w_last_seen <= w_beat_last;
            end 
+        else if (data_valid)
+        begin
+            if (wlast_bad_next)
+                aw_err <= 1'b1;
+            w_beat <= w_beat + 1'b1;
+            w_last_seen <= w_last_seen | w_beat_last;
+        end
 
         if (rg)
         begin

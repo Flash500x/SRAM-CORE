@@ -1,12 +1,8 @@
 `timescale 1ns / 1ps
 
-module top_module_main #(
-    parameter ADDRESS_WIDTH = 8,
-    parameter DATA_WIDTH    = 8,
-    parameter BURST_LENGTH  = 4,
-    parameter ID_WIDTH      = 2,
-    parameter BURST_TYPE    = 2
-)(
+module top_module_main
+import config_pkg::*;
+(
     input  wire                      ACLK,
     input  wire                      ARST,      // active low, shared by every block
 
@@ -44,14 +40,7 @@ module top_module_main #(
     output wire [1:0]                RRESP,
     output wire                      RLAST,
     output wire                      RVALID,
-    input  wire                      RREADY,
-
-    // direct read port (rd_fsm -> SRAM port 2)
-    input  wire                      rd_req,
-    input  wire [ADDRESS_WIDTH-1:0]  rd_addr,
-    output wire [DATA_WIDTH-1:0]     rd_data,
-    output wire                      rd_done,
-    output wire                      rd_busy
+    input  wire                      RREADY
 );
 
     // ------------------------------------------------------------------
@@ -63,8 +52,8 @@ module top_module_main #(
     wire [BURST_LENGTH:0]    ctrl_burst_len;
     wire [BURST_TYPE-1:0]    ctrl_burst_type;
     wire [ADDRESS_WIDTH-1:0] ctrl_addr;
-    wire [DATA_WIDTH-1:0]    ctrl_wdata;        // AXI_SLAVE.data_in  -> controller.data_in
-    wire [DATA_WIDTH-1:0]    ctrl_rdata;        // controller.data_out -> AXI_SLAVE.data_out
+    wire [DATA_WIDTH-1:0]    ctrl_wdata;        // AXI_SLAVE.data_in   -> ecc_encoder.data_in
+    wire [DATA_WIDTH-1:0]    ctrl_rdata;        // ecc_decoder.data_out -> AXI_SLAVE.data_out
     wire                     ctrl_done;
     wire                     ctrl_op_complete;
     wire                     ctrl_busy;
@@ -74,25 +63,30 @@ module top_module_main #(
     wire                     ctrl_illegal;
     wire                     ctrl_w_avail;
     wire                     ctrl_r_ready;
+    wire                     ctrl_w_wait;       // controller waits for a W beat
+    wire                     ctrl_w_timeout;    // W beat too late: end the write with SLVERR
+    wire                     ctrl_w_last;       // WLAST of the W beat at the controller input
+
+    // ------------------------------------------------------------------
+    // ECC (SEC-DED) between AXI_SLAVE and controller
+    // ------------------------------------------------------------------
+    wire [CODE_WIDTH-1:0]    ecc_wcode;         // ecc_encoder.code_out -> controller.data_in
+    wire [CODE_WIDTH-1:0]    ecc_rcode;         // controller.data_out  -> ecc_decoder.code_in
+    wire [PARITY_WIDTH-1:0]  ecc_syndrome;
+    wire                     ecc_corrected;     // single-bit error fixed, not reported on R, written back
+    wire                     ecc_double;        // uncorrectable, the beat gets SLVERR
+    wire [CODE_WIDTH-1:0]    ecc_scrub_code;    // corrected data re-encoded, written back by the controller
 
     // ------------------------------------------------------------------
     // controller <-> SRAM port 1
     // ------------------------------------------------------------------
     wire [ADDRESS_WIDTH-1:0] sram_addr;
-    wire [DATA_WIDTH-1:0]    sram_wdata;
-    wire [DATA_WIDTH-1:0]    sram_rdata;
+    wire [CODE_WIDTH-1:0]    sram_wdata;        // codewords, data + parity
+    wire [CODE_WIDTH-1:0]    sram_rdata;
     wire                     sram_wre;
     wire                     sram_oe;
     wire                     sram_ce;
     wire                     sram_status;
-
-    // ------------------------------------------------------------------
-    // rd_fsm <-> SRAM port 2
-    // ------------------------------------------------------------------
-    wire                     rd_oe2;
-    wire [ADDRESS_WIDTH-1:0] rd_addr2;
-    wire [DATA_WIDTH-1:0]    rd_rdata2;
-    wire                     sram_status2;
 
     // ------------------------------------------------------------------
     // AXI slave front end
@@ -102,7 +96,9 @@ module top_module_main #(
         .DATA_WIDTH    (DATA_WIDTH),
         .BURST_LENGTH  (BURST_LENGTH),
         .ID_WIDTH      (ID_WIDTH),
-        .BURST_TYPE    (BURST_TYPE)
+        .BURST_TYPE    (BURST_TYPE),
+        .W_TIMEOUT     (W_TIMEOUT),
+        .CLOCK_GATING  (CLOCK_GATING)
     ) u_axi_slave (
         .ACLK        (ACLK),
         .ARST        (ARST),
@@ -157,14 +153,40 @@ module top_module_main #(
         .controller_clk(controller_clk),
         .illegal     (ctrl_illegal),
         .w_avail     (ctrl_w_avail),
-        .r_ready     (ctrl_r_ready)
+        .r_ready     (ctrl_r_ready),
+        .ecc_err     (ecc_double),
+        .w_wait      (ctrl_w_wait),
+        .w_timeout   (ctrl_w_timeout),
+        .w_last      (ctrl_w_last)
+    );
+
+    // ------------------------------------------------------------------
+    // ECC encoder (write path) and decoder (read path)
+    // ------------------------------------------------------------------
+    ecc_encoder u_ecc_encoder (
+        .data_in  (ctrl_wdata),
+        .code_out (ecc_wcode)
+    );
+
+    ecc_decoder u_ecc_decoder (
+        .code_in       (ecc_rcode),
+        .data_out      (ctrl_rdata),
+        .syndrome      (ecc_syndrome),
+        .err_corrected (ecc_corrected),
+        .err_double    (ecc_double)
+    );
+
+    // scrub: re-encode the corrected read data so a single-bit error is fixed in the SRAM too
+    ecc_encoder u_ecc_scrub (
+        .data_in  (ctrl_rdata),
+        .code_out (ecc_scrub_code)
     );
 
     // ------------------------------------------------------------------
     // SRAM controller
     // ------------------------------------------------------------------
     controller #(
-        .DATA_WIDTH    (DATA_WIDTH),
+        .DATA_WIDTH    (CODE_WIDTH),        // the controller moves whole codewords
         .ADDRESS_WIDTH (ADDRESS_WIDTH),
         .BURST_LENGTH  (BURST_LENGTH),
         .BURST_TYPE    (BURST_TYPE)
@@ -193,19 +215,24 @@ module top_module_main #(
         .busy         (ctrl_busy),
         .done         (ctrl_done),
 
-        .data_in      (ctrl_wdata),
-        .data_out     (ctrl_rdata),
+        .data_in      (ecc_wcode),
+        .data_out     (ecc_rcode),
         .rdata_valid  (ctrl_rdata_valid),
         .illegal      (ctrl_illegal),
         .w_avail      (ctrl_w_avail),
-        .r_ready      (ctrl_r_ready)
+        .r_ready      (ctrl_r_ready),
+        .w_timeout    (ctrl_w_timeout),
+        .w_wait       (ctrl_w_wait),
+        .w_last       (ctrl_w_last),
+        .ecc_single   (ecc_corrected),
+        .scrub_data   (ecc_scrub_code)
     );
 
     // ------------------------------------------------------------------
-    // Dual-port SRAM
+    // Dual-port SRAM, CODE_WIDTH bits per word
     // ------------------------------------------------------------------
     spsram #(
-        .DATA_WIDTH    (DATA_WIDTH),
+        .DATA_WIDTH    (CODE_WIDTH),        // each word stores data + parity
         .ADDRESS_WIDTH (ADDRESS_WIDTH)
     ) u_spsram (
         // port 1 : controller
@@ -219,33 +246,13 @@ module top_module_main #(
         .rdata   (sram_rdata),
         .status  (sram_status),
 
-        // port 2 : rd_fsm (read only)
-        .clk2    (ACLK),
+        // port 2 : unused, read FSM removed for now
+        .clk2    (1'b0),
         .rst2    (ARST),
-        .oe2     (rd_oe2),
-        .addr2   (rd_addr2),
-        .rdata2  (rd_rdata2),
-        .status2 (sram_status2)
-    );
-
-    // ------------------------------------------------------------------
-    // Direct read FSM on SRAM port 2
-    // ------------------------------------------------------------------
-    rd_fsm #(
-        .ADDRESS_WIDTH (ADDRESS_WIDTH),
-        .DATA_WIDTH    (DATA_WIDTH)
-    ) u_rd_fsm (
-        .clk       (ACLK),
-        .rst       (ARST),
-        .req       (rd_req),
-        .status2   (sram_status2),
-        .addr      (rd_addr),
-        .rdata     (rd_data),
-        .rdata_ram (rd_rdata2),
-        .ram_addr  (rd_addr2),
-        .oe        (rd_oe2),
-        .done      (rd_done),
-        .busy      (rd_busy)
+        .oe2     (1'b0),
+        .addr2   ({ADDRESS_WIDTH{1'b0}}),
+        .rdata2  (),
+        .status2 ()
     );
 
 endmodule
